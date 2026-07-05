@@ -86,4 +86,4 @@ python3 scripts/paddle_searchable_pdf.py "input.pdf" "PaddleOCR可搜索PDF/inpu
 
 ## License
 
-尚未选择开源许可证。未添加许可证前，默认保留全部权利。
+MIT License. 详见 `LICENSE`。
