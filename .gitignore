@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+PaddleOCR缓存/
+OCR测试/
+OCR评估/
+OCR可检索PDF/
+OCR文本/
+OCR报告/
+PaddleOCR可搜索PDF/
+PaddleOCR转写/
+PaddleOCR文本/
+PaddleOCR结构/
+PaddleOCR报告/
+*.log

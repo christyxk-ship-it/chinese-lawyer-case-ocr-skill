@@ -1,0 +1,4 @@
+interface:
+  display_name: "中文执业律师案卷OCR-SKILL"
+  short_description: "中文法律案卷 OCR，批量生成可检索 PDF，并按需高质量增强"
+  default_prompt: "使用 $chinese-lawyer-case-ocr-skill 对中文法律案卷 PDF 做 OCR：先评估分流，再用 OCRmyPDF/Tesseract 批量生成可检索 PDF，只对核心或疑难页面做 PaddleOCR 高质量增强，并输出质检报告。"
