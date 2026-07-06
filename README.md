@@ -70,6 +70,17 @@ python3 scripts/paddle_searchable_pdf.py "OCR过程文件/OCR输入PDF/input_方
 - PaddleOCR 覆盖疑难页时使用 `--fail-if-selected-has-text`，防止新旧文字层叠加。
 - 最终验收查看 `OCR过程文件/OCR报告/最终检查/page_text_manifest.csv`，逐页核对后几页、横页、签章页和附件页。
 
+## 维护同步
+
+本机源 skill 位于 `~/.codex/skills/case-pdf-ocr`。公开仓库使用英文机器名 `chinese-lawyer-case-ocr-skill`，因此不要直接整目录覆盖。用仓库脚本同步：
+
+```bash
+python3 tools/sync_from_local_skill.py
+python3 tools/sync_from_local_skill.py --commit --push
+```
+
+脚本会复制 `SKILL.md` 正文、`scripts/`、`references/`，保留公开版 frontmatter 和 `agents/openai.yaml`，然后运行语法检查与 skill 校验。只有校验通过且存在真实差异时，才会提交和推送。
+
 ## 依赖
 
 主路线依赖：
