@@ -19,7 +19,8 @@ from typing import Iterable, Any
 
 DEFAULT_TOOL_ROOT = Path("/Users/xuqianchuan/Documents/Codex/tools/paddleocr")
 DEFAULT_PADDLEOCR_PYTHON = DEFAULT_TOOL_ROOT / "bin/python"
-DEFAULT_CACHE_DIR = DEFAULT_TOOL_ROOT / "cache"
+SOURCE_CACHE = DEFAULT_TOOL_ROOT / "cache"
+DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "PaddleOCR缓存"
 
 INPUT_SUFFIXES = {
     ".pdf",
@@ -146,14 +147,27 @@ def common_root(paths: list[str], files: list[Path]) -> Path:
 
 
 def default_dirs(root: Path, args: argparse.Namespace) -> tuple[Path, Path, Path]:
-    text_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "PaddleOCR文本"
-    json_dir = Path(args.json_dir).expanduser().resolve() if args.json_dir else root / "PaddleOCR结构"
-    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else root / "PaddleOCR报告"
+    process_dir = root / "OCR过程文件"
+    text_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else process_dir / "PaddleOCR文本"
+    json_dir = Path(args.json_dir).expanduser().resolve() if args.json_dir else process_dir / "PaddleOCR结构"
+    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "PaddleOCR报告"
     return text_dir, json_dir, report_dir
 
 
-def should_exclude(path: Path, text_dir: Path, json_dir: Path, report_dir: Path) -> bool:
-    for root in (text_dir.resolve(), json_dir.resolve(), report_dir.resolve()):
+def ensure_cache(cache_dir: Path) -> None:
+    (cache_dir / "official_models").mkdir(parents=True, exist_ok=True)
+    source_models = SOURCE_CACHE / "official_models"
+    for model in ("PP-OCRv6_medium_det", "PP-OCRv6_medium_rec"):
+        src = source_models / model
+        dst = cache_dir / "official_models" / model
+        if src.exists() and not dst.exists():
+            import shutil
+
+            shutil.copytree(src, dst)
+
+
+def should_exclude(path: Path, text_dir: Path, json_dir: Path, report_dir: Path, process_dir: Path) -> bool:
+    for root in (process_dir.resolve(), text_dir.resolve(), json_dir.resolve(), report_dir.resolve()):
         try:
             path.relative_to(root)
             return True
@@ -276,7 +290,8 @@ def print_tool_status(args: argparse.Namespace) -> None:
 
 def main() -> int:
     args = parse_args()
-    os.environ["PADDLE_PDX_CACHE_HOME"] = str(Path(args.cache_dir).expanduser().resolve())
+    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_dir)
     if args.check_tools:
         print_tool_status(args)
         return 0
@@ -289,7 +304,9 @@ def main() -> int:
         files = files[: args.max_files]
     root = common_root(args.paths, files)
     text_dir, json_dir, report_dir = default_dirs(root, args)
-    files = [p for p in files if not should_exclude(p, text_dir, json_dir, report_dir)]
+    process_dir = root / "OCR过程文件"
+    files = [p for p in files if not should_exclude(p, text_dir, json_dir, report_dir, process_dir)]
+    ensure_cache(cache_dir)
 
     existing_rows = read_manifest(report_dir) if not args.no_resume else {}
     rows: list[dict[str, str]] = []

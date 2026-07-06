@@ -60,6 +60,8 @@ SIDECAR_FIELDS = ["pdf", "text", "status", "chars", "note"]
 
 PDF_CHECK_FIELDS = ["pdf", "status", "note"]
 
+PAGE_TEXT_FIELDS = ["pdf", "page", "chars", "rotation", "width", "height", "sample", "note"]
+
 
 def tool_path(name: str) -> str:
     return shutil.which(name) or ""
@@ -184,19 +186,20 @@ def common_root(paths: list[str], pdfs: list[Path]) -> Path:
 
 
 def default_output_dirs(root: Path, args: argparse.Namespace) -> tuple[Path, Path]:
-    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR可检索PDF"
-    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else root / "OCR报告"
+    process_dir = root / "OCR过程文件"
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR成果：可检索PDF"
+    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "OCR报告"
     return output_dir, report_dir
 
 
-def default_text_dir(output_dir: Path, args: argparse.Namespace) -> Path:
+def default_text_dir(root: Path, args: argparse.Namespace) -> Path:
     if args.text_dir:
         return Path(args.text_dir).expanduser().resolve()
-    return output_dir.parent / "OCR文本"
+    return root / "OCR过程文件" / "OCR文本"
 
 
-def should_exclude(pdf: Path, output_dir: Path, report_dir: Path) -> bool:
-    excluded_roots = (output_dir.resolve(), report_dir.resolve())
+def should_exclude(pdf: Path, output_dir: Path, report_dir: Path, process_dir: Path) -> bool:
+    excluded_roots = (output_dir.resolve(), process_dir.resolve(), report_dir.resolve())
     for root in excluded_roots:
         try:
             pdf.relative_to(root)
@@ -417,6 +420,77 @@ def extract_text(pdf: Path) -> tuple[str, str]:
         return "", str(exc)
 
 
+def extract_page_text_rows(pdf: Path) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if PdfReader is None:
+        return [
+            {
+                "pdf": str(pdf),
+                "page": "",
+                "chars": "0",
+                "rotation": "",
+                "width": "",
+                "height": "",
+                "sample": "",
+                "note": "Python package pypdf is missing",
+            }
+        ]
+    try:
+        reader = PdfReader(str(pdf))
+        for page_number, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            sample = " ".join(text.split())[:120]
+            chars = len(text)
+            rows.append(
+                {
+                    "pdf": str(pdf),
+                    "page": str(page_number),
+                    "chars": str(chars),
+                    "rotation": str(int(getattr(page, "rotation", 0) or 0)),
+                    "width": f"{float(page.mediabox.width):.1f}",
+                    "height": f"{float(page.mediabox.height):.1f}",
+                    "sample": sample,
+                    "note": "low page text; inspect visually" if chars < 20 else "",
+                }
+            )
+    except Exception as exc:
+        rows.append(
+            {
+                "pdf": str(pdf),
+                "page": "",
+                "chars": "0",
+                "rotation": "",
+                "width": "",
+                "height": "",
+                "sample": "",
+                "note": str(exc),
+            }
+        )
+    return rows
+
+
+def write_page_text_manifest(report_dir: Path, rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    page_rows: list[dict[str, str]] = []
+    seen: set[Path] = set()
+    for row in rows:
+        if row["status"] in {"ok", "exists"} and row.get("output"):
+            pdf = Path(row["output"])
+        elif row["status"] == "scan-only":
+            pdf = Path(row["source"])
+        else:
+            continue
+        if pdf in seen or not pdf.exists():
+            continue
+        seen.add(pdf)
+        page_rows.extend(extract_page_text_rows(pdf))
+    report_dir.mkdir(parents=True, exist_ok=True)
+    with (report_dir / "page_text_manifest.csv").open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=PAGE_TEXT_FIELDS)
+        writer.writeheader()
+        writer.writerows(page_rows)
+    return page_rows
+
+
 def sidecar_text_path(pdf: Path, output_dir: Path, text_dir: Path) -> Path:
     try:
         rel = pdf.relative_to(output_dir)
@@ -489,6 +563,7 @@ def write_quality_report(
     rows: list[dict[str, str]],
     sidecar_rows: list[dict[str, str]] | None,
     pdf_check_rows: list[dict[str, str]] | None,
+    page_text_rows: list[dict[str, str]] | None,
 ) -> None:
     status_counts: dict[str, int] = {}
     for row in rows:
@@ -517,6 +592,26 @@ def write_quality_report(
         f"- OCR 后抽样低文本：{len(low_after)}",
         f"- 失败/超时/加密：{len(failures)}",
     ]
+    if page_text_rows is not None:
+        low_page_text = [
+            row
+            for row in page_text_rows
+            if row.get("chars", "0").isdigit() and int(row.get("chars", "0")) < 20
+        ]
+        landscape_pages = [
+            row
+            for row in page_text_rows
+            if row.get("width")
+            and row.get("height")
+            and float(row["width"]) > float(row["height"]) * 1.08
+        ]
+        lines.extend(
+            [
+                f"- 逐页文字层检查：{len(page_text_rows)} 页",
+                f"- 逐页低文本：{len(low_page_text)} 页",
+                f"- 横向页面：{len(landscape_pages)} 页",
+            ]
+        )
     if sidecar_rows is not None:
         sidecar_failures = [row for row in sidecar_rows if row["status"] != "ok"]
         sidecar_low = [row for row in sidecar_rows if row["chars"].isdigit() and int(row["chars"]) < 20]
@@ -544,6 +639,18 @@ def write_quality_report(
     if low_after:
         lines.extend(["", "## 低文本抽样清单", ""])
         lines.extend(f"- {row['source']}" for row in low_after[:100])
+    if page_text_rows is not None:
+        low_page_text = [
+            row
+            for row in page_text_rows
+            if row.get("chars", "0").isdigit() and int(row.get("chars", "0")) < 20
+        ]
+        if low_page_text:
+            lines.extend(["", "## 逐页低文本清单", ""])
+            lines.extend(
+                f"- 第{row['page']}页 chars={row['chars']}: {row['pdf']} {row['sample']}".rstrip()
+                for row in low_page_text[:100]
+            )
     if pdf_check_rows is not None:
         pdf_check_failed = [row for row in pdf_check_rows if row["status"] not in {"ok", "skipped"}]
         if pdf_check_failed:
@@ -566,8 +673,9 @@ def main() -> int:
         pdfs = pdfs[: args.max_files]
     root = common_root(args.paths, pdfs)
     output_dir, report_dir = default_output_dirs(root, args)
-    text_dir = default_text_dir(output_dir, args)
-    pdfs = [p for p in pdfs if not should_exclude(p, output_dir, report_dir)]
+    text_dir = default_text_dir(root, args)
+    process_dir = root / "OCR过程文件"
+    pdfs = [p for p in pdfs if not should_exclude(p, output_dir, report_dir, process_dir)]
 
     missing = [name for name, path in dependency_status(include_unpaper=bool(args.clean_final)).items() if not path]
     if args.mode != "scan-only" and missing:
@@ -639,19 +747,21 @@ def main() -> int:
         write_manifest(report_dir, rows)
 
     write_manifest(report_dir, rows)
+    page_text_rows = write_page_text_manifest(report_dir, rows)
     sidecar_rows = None
     if args.mode != "scan-only" and not args.no_sidecar_text:
         sidecar_rows = write_sidecars(report_dir, output_dir, text_dir, rows)
     pdf_check_rows = None
     if args.mode != "scan-only" and not args.no_pdf_check:
         pdf_check_rows = check_pdf_outputs(report_dir, rows)
-    write_quality_report(report_dir, rows, sidecar_rows, pdf_check_rows)
+    write_quality_report(report_dir, rows, sidecar_rows, pdf_check_rows, page_text_rows)
     print(f"PDFs scanned: {len(pdfs)}")
     print(f"Manifest: {report_dir / 'ocr_manifest.csv'}")
     if sidecar_rows is not None:
         print(f"Sidecar text manifest: {report_dir / 'sidecar_text_manifest.csv'}")
     if pdf_check_rows is not None:
         print(f"PDF check manifest: {report_dir / 'pdf_check_manifest.csv'}")
+    print(f"Page text manifest: {report_dir / 'page_text_manifest.csv'}")
     print(f"Quality report: {report_dir / 'OCR质量检查.md'}")
     return 0
 

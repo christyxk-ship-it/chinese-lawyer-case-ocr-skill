@@ -79,6 +79,14 @@ def find_pdfs(paths: list[str], recursive: bool) -> list[Path]:
     return sorted(dict.fromkeys(pdfs))
 
 
+def is_under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def common_root(paths: list[str], pdfs: list[Path]) -> Path:
     roots: list[str] = []
     for raw in paths:
@@ -251,7 +259,9 @@ def main() -> int:
         print("No PDF files found.", file=sys.stderr)
         return 2
     root = common_root(args.paths, pdfs)
-    report_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR评估"
+    excluded_roots = (root / "OCR成果：可检索PDF", root / "OCR过程文件")
+    pdfs = [p for p in pdfs if not any(is_under(p, excluded) for excluded in excluded_roots)]
+    report_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR过程文件" / "OCR评估"
     rows: list[dict[str, str]] = []
     for pdf in pdfs:
         print(f"评估 {pdf}", flush=True)

@@ -59,6 +59,8 @@ PaddleOCR 可搜索 PDF 档位：
 
 节省算力原则：能只跑低文本页、表格页、核心证据页，就不要全文件跑；能用 `--profile fast` 判断质量，就不要直接上 `careful`；能用 OCRmyPDF 达标，就不要重复跑 PaddleOCR。
 
+方向、水印或旧文字层处理原则：PaddleOCR 生成可搜索 PDF 时，选中页应来自视觉方向正确、无旧文字层的图片底稿。修复已有 OCR 成品时，先把需要重做的页输出到 `OCR过程文件/OCR输入PDF/`，再用 `--fail-if-selected-has-text` 防止把新文字层叠到旧文字层上。
+
 本机当前环境：
 
 ```bash
@@ -78,7 +80,7 @@ python3 scripts/paddleocr_extract.py --check-tools
 python3 scripts/paddleocr_extract.py "/path/to/case-folder" --max-files 1
 ```
 
-PaddleOCR 脚本检测到 `/Users/xuqianchuan/Documents/Codex/tools/paddleocr/bin/python` 存在时，会自动用该 Python 重新执行自己。`paddle_searchable_pdf.py` 默认使用当前工作目录下的 `PaddleOCR缓存/`，并会复用已下载的 PP-OCRv6 检测/识别模型，避免在受限环境里写入不可写缓存目录。
+PaddleOCR 脚本检测到 `/Users/xuqianchuan/Documents/Codex/tools/paddleocr/bin/python` 存在时，会自动用该 Python 重新执行自己。`paddle_searchable_pdf.py` 默认使用当前工作目录下的 `OCR过程文件/PaddleOCR缓存/`，并会复用已下载的 PP-OCRv6 检测/识别模型，避免在受限环境里写入不可写缓存目录。
 
 简体中文 PaddleOCR 默认设置：
 
@@ -139,9 +141,9 @@ ocrmypdf -l chi_sim+eng --skip-text --output-type pdf sanitized.pdf output.pdf
 
 `careful` 档位只有在本机存在 `unpaper` 时才自动启用 `--clean-final`。如果缺少 `unpaper`，不要让 OCR 因清理步骤失败而中断；首要目标仍然是生成可检索 PDF。只有用户明确要求更强清理效果时，才考虑安装 `unpaper` 后重跑。
 
-脚本每处理一个文件就写入 `ocr_manifest.csv`；默认跳过既有 `ok`/`exists` 记录；除非传入 `--no-sidecar-text`，否则创建 `OCR文本/` 文本副本；除非传入 `--no-pdf-check`，否则对 OCR 输出运行 `qpdf --check`；最后写入 `OCR质量检查.md`。
+脚本每处理一个文件就写入 `ocr_manifest.csv`；默认跳过既有 `ok`/`exists` 记录；除非传入 `--no-sidecar-text`，否则创建 `OCR过程文件/OCR文本/` 文本副本；除非传入 `--no-pdf-check`，否则对 OCR 输出运行 `qpdf --check`；每次都会写入 `page_text_manifest.csv` 逐页文字量清单；最后写入 `OCR质量检查.md`。
 
-完成判断以 `OCR可检索PDF/` 中的 `_OCR.pdf` 为准：文件必须存在、可打开、可检索，并通过结构检查。文本副本、PaddleOCR 结果和报告只用于质检、检索辅助和疑难材料增强。
+完成判断以 `OCR成果：可检索PDF/` 中的可搜索 PDF 为准：文件必须存在、可打开、可检索，通过结构检查，并通过逐页文字层检查。文本副本、PaddleOCR 结果和报告只用于质检、检索辅助和疑难材料增强，统一归入 `OCR过程文件/`。
 
 ## 质量信号
 
@@ -151,6 +153,9 @@ ocrmypdf -l chi_sim+eng --skip-text --output-type pdf sanitized.pdf output.pdf
 - 输出 PDF 缺失或明显小于预期。
 - 输出 PDF 未通过 `qpdf --check`。
 - OCR 后可提取文字数量接近零。
+- `page_text_manifest.csv` 中某些正文页文字量异常偏低。
+- 横向/旋转页只做了页面外观旋转，没有重建对应文字层。
+- PaddleOCR 选中页已经存在旧文字层，容易形成新旧文字层叠加。
 - 页数发生变化。
 - 多页出现乱码标点或重复片段。
 - 表格、手写内容、印章、身份证件或照片是重要证据。

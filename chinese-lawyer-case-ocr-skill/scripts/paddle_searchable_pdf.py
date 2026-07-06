@@ -20,7 +20,7 @@ SOURCE_CACHE = PADDLE_TOOL_ROOT / "cache"
 BUNDLED_SITE_PACKAGES = Path(
     "/Users/xuqianchuan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages"
 )
-DEFAULT_CACHE_DIR = Path.cwd() / "PaddleOCR缓存"
+DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "PaddleOCR缓存"
 FONT = "STSong-Light"
 
 
@@ -98,6 +98,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pages", type=int, help="process only the first N pages")
     parser.add_argument("--base-pdf", help="optional OCRmyPDF base PDF; non-selected pages are copied from it")
     parser.add_argument("--skip-if-text", action="store_true", help="preserve pages with an existing text layer")
+    parser.add_argument(
+        "--fail-if-selected-has-text",
+        action="store_true",
+        help="abort if pages selected for PaddleOCR already contain a text layer; use an image-only source PDF instead",
+    )
     parser.add_argument("--dump-text", help="write recognized text with <<<PAGE N>>> markers")
     parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE_DIR), help="writable PaddleOCR cache directory")
     parser.add_argument("--check-tools", action="store_true", help="print dependency status and exit")
@@ -199,10 +204,14 @@ def poly_to_box(poly: object) -> tuple[float, float, float, float] | None:
 
 
 def page_has_text(page: object) -> bool:
+    return page_text_chars(page) >= 20
+
+
+def page_text_chars(page: object) -> int:
     try:
-        return len((page.extract_text() or "").strip()) >= 20
+        return len((page.extract_text() or "").strip())
     except Exception:
-        return False
+        return 0
 
 
 def draw_invisible(c: canvas.Canvas, text: str, x_pt: float, base_pt: float, fs: float, width_pt: float) -> None:
@@ -273,6 +282,20 @@ def main() -> int:
         print("base PDF page count does not match source PDF", file=sys.stderr)
         return 2
     selected_pages = parse_pages(args.pages, len(reader.pages), args.max_pages)
+    if args.fail_if_selected_has_text:
+        selected_indexes = selected_pages if selected_pages is not None else set(range(len(reader.pages)))
+        existing_text_pages = [
+            (index + 1, chars)
+            for index, page in enumerate(reader.pages)
+            if index in selected_indexes and (chars := page_text_chars(page)) >= 20
+        ]
+        if existing_text_pages:
+            summary = ", ".join(f"{page_no}({chars})" for page_no, chars in existing_text_pages[:20])
+            print(
+                "selected pages already contain text layer; rebuild from image-only source PDF first: " + summary,
+                file=sys.stderr,
+            )
+            return 2
     engine = build_engine(args.lang)
     writer = PdfWriter()
 
@@ -292,6 +315,9 @@ def main() -> int:
                     dump_handle.write(f"<<<PAGE {page_no}>>>\n{text}\n")
                 print(f"第{page_no}页: 已有文字层，跳过", flush=True)
                 continue
+            existing_chars = page_text_chars(page)
+            if existing_chars >= 20:
+                print(f"第{page_no}页: 警告，输入页已有{existing_chars}字文字层，将叠加新文字层", flush=True)
 
             image = np.array(doc[index].render(scale=scale, grayscale=False).to_pil().convert("RGB"))
             lines = result_to_lines(engine.predict(image))
