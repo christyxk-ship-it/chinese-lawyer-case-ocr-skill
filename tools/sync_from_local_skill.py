@@ -101,6 +101,10 @@ def split_skill_body(text: str) -> str:
 
 
 def write_public_skill(source: Path, target: Path) -> None:
+    target.write_text(expected_public_skill_text(source), encoding="utf-8")
+
+
+def expected_public_skill_text(source: Path) -> str:
     body = split_skill_body((source / "SKILL.md").read_text(encoding="utf-8"))
     frontmatter = (
         "---\n"
@@ -108,7 +112,7 @@ def write_public_skill(source: Path, target: Path) -> None:
         f'description: "{RELEASE_DESCRIPTION}"\n'
         "---"
     )
-    target.write_text(frontmatter + body, encoding="utf-8")
+    return frontmatter + body
 
 
 def mirror_dir(source: Path, target: Path) -> None:
@@ -128,6 +132,42 @@ def sync_files(source: Path, repo: Path) -> Path:
     (public_skill / "agents").mkdir(parents=True, exist_ok=True)
     (public_skill / "agents" / "openai.yaml").write_text(AGENT_OPENAI_YAML, encoding="utf-8")
     return public_skill
+
+
+def relevant_files(base: Path) -> dict[Path, Path]:
+    files: dict[Path, Path] = {}
+    if not base.exists():
+        return files
+    for path in sorted(base.rglob("*")):
+        if not path.is_file():
+            continue
+        if any(part in IGNORE_NAMES for part in path.parts):
+            continue
+        if path.name.endswith(".pyc"):
+            continue
+        files[path.relative_to(base)] = path
+    return files
+
+
+def dirs_match(source: Path, target: Path) -> bool:
+    source_files = relevant_files(source)
+    target_files = relevant_files(target)
+    if set(source_files) != set(target_files):
+        return False
+    return all(source_files[rel].read_bytes() == target_files[rel].read_bytes() for rel in source_files)
+
+
+def public_package_matches(source: Path, repo: Path) -> bool:
+    public_skill = repo / PUBLISHED_SKILL_DIR
+    skill_path = public_skill / "SKILL.md"
+    agent_path = public_skill / "agents" / "openai.yaml"
+    if not skill_path.exists() or skill_path.read_text(encoding="utf-8") != expected_public_skill_text(source):
+        return False
+    if not agent_path.exists() or agent_path.read_text(encoding="utf-8") != AGENT_OPENAI_YAML:
+        return False
+    return dirs_match(source / "scripts", public_skill / "scripts") and dirs_match(
+        source / "references", public_skill / "references"
+    )
 
 
 def validate(public_skill: Path, repo: Path) -> None:
@@ -166,6 +206,9 @@ def main() -> int:
         raise SystemExit(f"not a git repository: {repo}")
 
     require_clean_repo(repo, args.allow_dirty)
+    if args.push and public_package_matches(source, repo):
+        print("No public package changes to publish.")
+        return 0
     if args.push:
         fast_forward_remote(repo)
     public_skill = sync_files(source, repo)
