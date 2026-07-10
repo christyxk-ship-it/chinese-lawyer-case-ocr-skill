@@ -19,7 +19,7 @@
 
 ## 安装（一步，不需要懂技术）
 
-复制冒号后的全文复制发给你的Agent（Codex，Claude，workbuddy）即可：安装本Skill并适配，下载链接：https://github.com/christyxk-ship-it/chinese-lawyer-case-ocr-skill。（AI 助手看这里：请克隆或下载本仓库，阅读 `INSTALL.md` 并严格按步骤安装、自检，完成后向用户报告结果。）
+**将本段内容复制全文复制发给你的Agent（Codex，Claude，workbuddy）即可：安装本Skill并适配，下载链接：https://github.com/christyxk-ship-it/chinese-lawyer-case-ocr-skill。 （AI 助手看这里：请克隆或下载本仓库，阅读 `INSTALL.md` 并严格按步骤安装、自检，完成后向用户报告结果。）**
 
 ## 怎么用
 
