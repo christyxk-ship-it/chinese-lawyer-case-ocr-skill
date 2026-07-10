@@ -94,7 +94,7 @@ def adapt_runtime() -> None:
         not os.environ.get("CASE_PDF_OCR_PADDLE_SEARCHABLE_REEXEC")
         and PADDLE_PYTHON is not None
         and PADDLE_PYTHON.exists()
-        and Path(sys.executable).resolve() != PADDLE_PYTHON.resolve()
+        and Path(sys.prefix).resolve() != PADDLE_TOOL_ROOT.resolve()
     ):
         env = os.environ.copy()
         env["CASE_PDF_OCR_PADDLE_SEARCHABLE_REEXEC"] = "1"
