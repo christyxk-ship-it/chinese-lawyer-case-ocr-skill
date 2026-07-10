@@ -14,48 +14,85 @@ from pathlib import Path
 from typing import Iterable
 
 
-PADDLE_TOOL_ROOT = Path("/Users/xuqianchuan/Documents/Codex/tools/paddleocr")
-PADDLE_PYTHON = PADDLE_TOOL_ROOT / "bin/python"
-SOURCE_CACHE = PADDLE_TOOL_ROOT / "cache"
-BUNDLED_SITE_PACKAGES = Path(
-    "/Users/xuqianchuan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages"
+# PaddleOCR 环境探测顺序：环境变量 CASE_OCR_PADDLE_ROOT > 标准安装位置 > 本机既有位置
+def find_paddle_root() -> Path | None:
+    explicit = os.environ.get("CASE_OCR_PADDLE_ROOT")
+    candidates = ([Path(explicit).expanduser()] if explicit else []) + [
+        Path.home() / ".case-pdf-ocr/paddle",
+        Path.home() / "Codex/tools/paddleocr",
+    ]
+    for root in candidates:
+        if (root / "bin/python").exists():
+            return root.resolve()
+    return None
+
+
+PADDLE_TOOL_ROOT = find_paddle_root()
+PADDLE_PYTHON = PADDLE_TOOL_ROOT / "bin/python" if PADDLE_TOOL_ROOT else None
+SOURCE_CACHE = PADDLE_TOOL_ROOT / "cache" if PADDLE_TOOL_ROOT else None
+BUNDLED_SITE_PACKAGES_BASES = (
+    Path.home() / ".case-pdf-ocr/venv/lib",
+    Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib",
 )
-DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "PaddleOCR缓存"
-FONT = "STSong-Light"
+DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "缓存"
+# 嵌入式中文字体候选：嵌入子集并自动生成 ToUnicode 映射，保证 Poppler 等标准提取器可读文字层
+FONT_CANDIDATES = (
+    ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 0),
+    ("/System/Library/Fonts/Supplemental/Songti.ttc", 0),
+    ("/System/Library/Fonts/STHeiti Light.ttc", 0),
+)
 
 
 def load_bundled_package(name: str) -> None:
     if name in sys.modules:
         return
-    init_file = BUNDLED_SITE_PACKAGES / name / "__init__.py"
-    if not init_file.exists():
+    try:
+        __import__(name)
         return
-    spec = importlib.util.spec_from_file_location(
-        name,
-        init_file,
-        submodule_search_locations=[str(init_file.parent)],
-    )
-    if spec is None or spec.loader is None:
-        return
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
+    except ImportError:
+        pass
+    for base in BUNDLED_SITE_PACKAGES_BASES:
+        for site_packages in base.glob("python*/site-packages"):
+            init_file = site_packages / name / "__init__.py"
+            if not init_file.exists():
+                continue
+            spec = importlib.util.spec_from_file_location(
+                name,
+                init_file,
+                submodule_search_locations=[str(init_file.parent)],
+            )
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+            return
 
 
-def preparse_cache_dir(argv: list[str]) -> Path:
+def preparse_cache_dir(argv: list[str]) -> str | None:
     for idx, arg in enumerate(argv):
         if arg == "--cache-dir" and idx + 1 < len(argv):
-            return Path(argv[idx + 1]).expanduser().resolve()
+            return argv[idx + 1]
         if arg.startswith("--cache-dir="):
-            return Path(arg.split("=", 1)[1]).expanduser().resolve()
+            return arg.split("=", 1)[1]
+    return None
+
+
+def resolve_cache_dir(explicit: str | None) -> Path:
+    # 未显式指定且全局缓存可写时直接使用，模型只下载/保存一份，不逐案卷复制
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    if SOURCE_CACHE is not None and os.access(SOURCE_CACHE.parent, os.W_OK):
+        return SOURCE_CACHE.resolve()
     return DEFAULT_CACHE_DIR.resolve()
 
 
 def adapt_runtime() -> None:
-    cache_dir = preparse_cache_dir(sys.argv[1:])
+    cache_dir = resolve_cache_dir(preparse_cache_dir(sys.argv[1:]))
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(cache_dir))
     if (
         not os.environ.get("CASE_PDF_OCR_PADDLE_SEARCHABLE_REEXEC")
+        and PADDLE_PYTHON is not None
         and PADDLE_PYTHON.exists()
         and Path(sys.executable).resolve() != PADDLE_PYTHON.resolve()
     ):
@@ -69,15 +106,42 @@ def adapt_runtime() -> None:
 
 adapt_runtime()
 
-import numpy as np  # noqa: E402
-import pypdfium2 as pdfium  # noqa: E402
-from pypdf import PdfReader, PdfWriter  # noqa: E402
-from reportlab.pdfbase import pdfmetrics  # noqa: E402
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # noqa: E402
-from reportlab.pdfgen import canvas  # noqa: E402
+try:
+    import numpy as np  # noqa: E402
+    import pypdfium2 as pdfium  # noqa: E402
+    from pypdf import PdfReader, PdfWriter  # noqa: E402
+    from reportlab.pdfbase import pdfmetrics  # noqa: E402
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # noqa: E402
+    from reportlab.pdfbase.ttfonts import TTFont  # noqa: E402
+    from reportlab.pdfgen import canvas  # noqa: E402
+except ImportError as exc:
+    raise SystemExit(
+        f"缺少 Python 依赖：{exc.name}。请按 INSTALL.md 创建 PaddleOCR 环境：\n"
+        "  python3 -m venv ~/.case-pdf-ocr/paddle\n"
+        "  ~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab\n"
+        "或设置环境变量 CASE_OCR_PADDLE_ROOT 指向已装好依赖的虚拟环境目录。"
+    )
 
 
-pdfmetrics.registerFont(UnicodeCIDFont(FONT))
+def register_font() -> str:
+    for path, index in FONT_CANDIDATES:
+        if Path(path).exists():
+            try:
+                pdfmetrics.registerFont(TTFont("CaseOCR-CJK", path, subfontIndex=index))
+                return "CaseOCR-CJK"
+            except Exception:
+                continue
+    # 兜底：STSong-Light 不嵌入字体、依赖阅读器自带 Adobe-GB1 字库，文字层可移植性差
+    print(
+        "warning: no embeddable CJK font found; falling back to STSong-Light "
+        "(text layer may be unreadable to Poppler-based extractors)",
+        file=sys.stderr,
+    )
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    return "STSong-Light"
+
+
+FONT = register_font()
 
 
 def parse_args() -> argparse.Namespace:
@@ -104,7 +168,7 @@ def parse_args() -> argparse.Namespace:
         help="abort if pages selected for PaddleOCR already contain a text layer; use an image-only source PDF instead",
     )
     parser.add_argument("--dump-text", help="write recognized text with <<<PAGE N>>> markers")
-    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE_DIR), help="writable PaddleOCR cache directory")
+    parser.add_argument("--cache-dir", help="PaddleOCR cache directory; default reuses the source cache when available")
     parser.add_argument("--check-tools", action="store_true", help="print dependency status and exit")
     return parser.parse_args()
 
@@ -135,6 +199,8 @@ def parse_pages(raw: str | None, total: int, max_pages: int | None) -> set[int] 
 
 
 def ensure_cache(cache_dir: Path) -> None:
+    if SOURCE_CACHE is None or cache_dir == SOURCE_CACHE.resolve():
+        return
     (cache_dir / "official_models").mkdir(parents=True, exist_ok=True)
     source_models = SOURCE_CACHE / "official_models"
     for model in ("PP-OCRv6_medium_det", "PP-OCRv6_medium_rec"):
@@ -145,7 +211,15 @@ def ensure_cache(cache_dir: Path) -> None:
 
 
 def build_engine(lang: str):
-    from paddleocr import PaddleOCR
+    try:
+        from paddleocr import PaddleOCR
+    except ImportError as exc:
+        raise SystemExit(
+            f"PaddleOCR 不可用（{exc}）。请按 INSTALL.md 创建环境：\n"
+            "  python3 -m venv ~/.case-pdf-ocr/paddle\n"
+            "  ~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab\n"
+            "或设置环境变量 CASE_OCR_PADDLE_ROOT 指向已装好 paddleocr 的虚拟环境目录。"
+        )
 
     attempts = (
         {
@@ -245,7 +319,8 @@ def add_overlay(page: object, lines: list[tuple[str, tuple[float, float, float, 
 
 def print_status(args: argparse.Namespace) -> None:
     print(f"python: {sys.executable}")
-    print(f"cache: {Path(args.cache_dir).expanduser().resolve()}")
+    print(f"cache: {resolve_cache_dir(args.cache_dir)}")
+    print(f"font: {FONT}")
     for package in ("paddleocr", "paddle", "pypdfium2", "pypdf", "reportlab", "numpy"):
         try:
             module = __import__(package)
@@ -263,7 +338,7 @@ def main() -> int:
         print("Provide input and output PDFs, or use --check-tools.", file=sys.stderr)
         return 2
 
-    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    cache_dir = resolve_cache_dir(args.cache_dir)
     os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_dir)
     ensure_cache(cache_dir)
 

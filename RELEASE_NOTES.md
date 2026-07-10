@@ -1,5 +1,15 @@
 # 发布说明
 
+## v0.3.0
+
+- 面向分发的去个人化改造：依赖环境改为自动探测（`CASE_OCR_PYTHON` / `CASE_OCR_PADDLE_ROOT` 环境变量 > `~/.case-pdf-ocr/` 标准安装位置 > 既有位置兜底），脚本内不再含任何个人路径；依赖缺失时给出明确安装指引。
+- 新增 `README.md`（面向使用者）、`INSTALL.md`（面向执行安装的 AI 助手）、`install.sh`（一键安装），支持"下载后对 AI 说一句话"完成安装。
+- 输出结构重构：成果目录改为 `OCR成果/`，每个原件产出 `_OCR.pdf` + 同名 `_OCR.md` 文本副本；过程目录合并为 `报告/底稿/转写/缓存` 四类。
+- 文字层可移植性修复：隐形文字层改用嵌入式中文字体并自动生成 ToUnicode 映射，Poppler/Ghostscript 等标准提取器均可读；验收流程增加 gs txtwrite 第二提取器抽查。
+- 模型缓存全局复用：默认直接使用 PaddleOCR 环境下的全局缓存，不再逐案卷复制模型。
+- manifest 跨批次合并写回，分批处理不再丢失历史记录。
+- 评估产物 `*.paddle_pages.txt` 直接串接 `--pages`；补全 qpdf+gs 生成"方向正确、无旧文字层底稿"的标准命令。
+
 ## v0.2.1
 
 - 增加 `tools/sync_from_local_skill.py`，用于把本机 `~/.codex/skills/case-pdf-ocr` 自动同步到公开发布包。

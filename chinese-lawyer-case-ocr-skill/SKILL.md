@@ -1,91 +1,80 @@
 ---
 name: chinese-lawyer-case-ocr-skill
-description: "中文执业律师案卷 OCR skill。批量 OCR 并质检中文法律案件 PDF，首要交付可打开、可检索、结构检查通过的 PDF 副本。用于把扫描件或图片型案卷材料转成可检索 PDF，并在速度、准确率、算力/token 之间先评估再分流：OCRmyPDF/Tesseract 负责批量基础 OCR，PaddleOCR 负责核心、疑难、表格、低质页面的高质量增强。"
+description: "在本地把扫描件/图片型中文法律案卷 PDF 转成可检索 PDF 并质检。当用户要求 OCR 案卷、让判决书等扫描 PDF 可搜索/可复制文字、给 PDF 加文字层，或提供的 PDF 无法选中文字时使用。"
 ---
 
 # 案件 PDF OCR
 
-## 一句话原则
+## 原则
 
-目标是 **可检索 PDF**，不是单纯 TXT、JSON 或截图转写。默认最终只保留一份可搜索 PDF，放入 `OCR成果：可检索PDF/`；除最终成果外，评估、报告、文本、缓存、转写、备份和中间件都放入 `OCR过程文件/`。先用快、省资源的 OCRmyPDF/Tesseract 批量跑，再把 PaddleOCR 留给真正需要更干净文字层的页面，若生成增强版，以增强版作为最终件。
+目标是可检索 PDF。先用省算力的 OCRmyPDF/Tesseract 批量打底，PaddleOCR 只增强评估出的疑难页。未经用户明确授权，不上传法律 PDF 到云端。
 
-## 跨 Agent 使用
+所有命令先 `cd` 到案卷根目录再执行（脚本默认输出目录随输入路径解析），脚本用绝对路径引用，`SKILL` 设为本 SKILL.md 所在目录：
 
-这个目录是 Codex skill，workbuddy 不能自动加载 `~/.codex/skills` 的触发机制。但本 skill 的脚本都是普通本地 Python；workbuddy、Claude、Hermes 可以通过任务包调用这些脚本，或把脚本/说明复制到 `.agents-shared/` 后按同一流程使用。跨 agent 状态仍写 `.agents-shared/state/board.yaml`。
+```bash
+SKILL=<本 skill 安装目录>   # 即本文件所在目录，如 ~/.workbuddy/skills/chinese-lawyer-case-ocr-skill
+```
 
 ## 标准流程
 
-1. 先评估分流：
+1. 评估分流：
 
 ```bash
-python3 scripts/assess_ocr_strategy.py "/path/to/PDF-or-folder" --output-dir "OCR过程文件/OCR评估"
+python3 "$SKILL/scripts/assess_ocr_strategy.py" .
 ```
 
-产物在 `OCR过程文件/OCR评估/`：`ocr_strategy.md`、`ocr_strategy.csv`、`*.paddle_pages.txt`、`*.ocrmypdf_pages.txt`。
+产物在 `OCR过程文件/报告/`：`ocr_strategy.md/.csv`，以及每件的 `<名>.paddle_pages.txt` / `<名>.ocrmypdf_pages.txt` 页码范围。
 
-2. 并行跑基础 OCR 与高质量页 OCR。横向、旋转、水印页先生成视觉方向正确、无旧文字层的 `OCR过程文件/OCR输入PDF/` 底稿，再交给 PaddleOCR；不要在旧 OCR 成品上直接补叠文字层：
+2. 基础 OCR（批量）：
 
 ```bash
-python3 scripts/ocr_case_pdfs.py "/path/to/PDF-or-folder" --mode skip-text --profile fast --sanitize-input always --languages chi_sim+eng --output-dir "OCR成果：可检索PDF" --report-dir "OCR过程文件/OCR报告" --text-dir "OCR过程文件/OCR文本"
-python3 scripts/paddle_searchable_pdf.py "OCR过程文件/OCR输入PDF/input_方向水印处理后.pdf" "OCR成果：可检索PDF/input_paddle.pdf" --pages "评估出的页码" --profile balanced --fail-if-selected-has-text --dump-text "OCR过程文件/PaddleOCR转写/input.txt" --cache-dir "OCR过程文件/PaddleOCR缓存"
+python3 "$SKILL/scripts/ocr_case_pdfs.py" . --mode skip-text --profile fast --sanitize-input always
 ```
 
-核心证据或正式交付件，把 `fast` 换成 `careful` 或 `balanced`。繁体材料加 `chi_tra` 或 PaddleOCR `--lang chinese_cht`。
+注意：`fast` 档不做自动旋转/纠偏。核心证据或正式交付件改用 `careful` 或 `balanced`；繁体材料 `--languages` 加 `chi_tra`。
 
-3. 如需混合成品：先等 OCRmyPDF 基础版完成，再让 PaddleOCR 覆盖评估出的疑难页；混合成品通过验收后，只保留这一份作为最终可搜索 PDF，基础 OCR PDF 作为中间件清理或不作为交付件列示：
+3. 疑难页增强（评估出 paddle 页时）。先生成方向正确、无旧文字层的底稿，再叠加，验收后替换基础版：
 
 ```bash
-python3 scripts/paddle_searchable_pdf.py "OCR过程文件/OCR输入PDF/input_方向水印处理后.pdf" "OCR成果：可检索PDF/input_hybrid.pdf" --base-pdf "OCR成果：可检索PDF/input_OCR.pdf" --pages "评估出的页码" --profile balanced --fail-if-selected-has-text --dump-text "OCR过程文件/PaddleOCR转写/input_hybrid.txt" --cache-dir "OCR过程文件/PaddleOCR缓存"
+qpdf "input.pdf" --rotate=+90:3,7 -- "OCR过程文件/底稿/input_旋转.pdf"        # 如需修方向（示例：第3、7页转90°）
+gs -o "OCR过程文件/底稿/input_底稿.pdf" -sDEVICE=pdfimage24 -r300 "OCR过程文件/底稿/input_旋转.pdf"   # 栅格化：固化方向并剥掉旧文字层
+python3 "$SKILL/scripts/paddle_searchable_pdf.py" "OCR过程文件/底稿/input_底稿.pdf" "OCR成果/input_OCR.new.pdf" \
+  --base-pdf "OCR成果/input_OCR.pdf" --pages "$(cat 'OCR过程文件/报告/input.paddle_pages.txt')" \
+  --fail-if-selected-has-text --dump-text "OCR过程文件/转写/input.txt"
+gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -sOutputFile=- "OCR成果/input_OCR.new.pdf" | head -20   # 第二提取器抽查：必须能读出中文，防止文字层只对部分阅读器可见
+mv "OCR成果/input_OCR.new.pdf" "OCR成果/input_OCR.pdf"                        # 验收通过后替换，只留一份
 ```
 
-4. 验收后再进入法律审查：
-
-```bash
-qpdf --check "output.pdf"
-python3 scripts/ocr_case_pdfs.py "output.pdf" --mode scan-only --report-dir "OCR过程文件/OCR报告/最终检查"
-```
-
-检查页数是否一致、PDF 是否可打开、关键词是否能命中、`page_text_manifest.csv` 逐页文字量是否异常、低文本页是否需要人工复核。
-
-## 防止方向/文字层错位
-
-- 横向或旋转页先修视觉方向，再 OCR；不要只旋转最终 PDF 的页面外观。
-- 去水印、裁边、方向调整后，要从无旧文字层的底稿重新生成文字层；不要在已有 OCR 成品上继续叠加。
-- PaddleOCR 覆盖疑难页时加 `--fail-if-selected-has-text`，如果选中页已有文字层，先回到 `OCR过程文件/OCR输入PDF/` 的图片底稿。
-- 最终验收必须看 `OCR过程文件/OCR报告/最终检查/page_text_manifest.csv`，逐页核对后几页、横页、签章页和附件页；不能只看抽样总字数。
-- 签字盖章页、残章页可以文字少，但要在报告中说明“页面内容本身少”，不能默认为识别成功。
+4. 验收：重跑第 2 步命令即可——manifest 断点续跑不会重复 OCR，只从最终 PDF 刷新 md 副本、逐页文字量清单和结构检查。然后核对 `OCR过程文件/报告/` 下的 `OCR质量检查.md` 与 `page_text_manifest.csv`：页数一致、逐页文字量无异常，后几页、横页、签章页逐页核对。签章页文字少要在报告说明"页面内容本身少"，不能默认为识别成功。
 
 ## 分流规则
 
-- 已有文字层：交给 OCRmyPDF `skip-text` 保留，不重复 OCR。
-- 普通扫描页：OCRmyPDF/Tesseract，速度快、算力低，适合批量。
-- 核心证据、表格密集、横向/旋转、截图、印章、低文本或乱码页：PaddleOCR 可搜索 PDF。
-- 只要文本/坐标，不需要重做可搜索 PDF：用 `scripts/paddleocr_extract.py`。
+- 已有文字层：`skip-text` 保留，不重复 OCR。
+- 普通扫描页：OCRmyPDF/Tesseract，批量、省算力。
+- 核心证据、表格密集、横向/旋转、印章、低文本或乱码页：PaddleOCR（必须先做底稿）。
+- 只要文本/坐标、不需要可搜索 PDF：`scripts/paddleocr_extract.py`。
+
+## 防止方向/文字层错位
+
+- 旋转/横向/水印页：先按第 3 步 qpdf+gs 生成底稿再 OCR；禁止在旧 OCR 成品上直接叠文字层，`--fail-if-selected-has-text` 兜底。
+- `--profile fast` 不做自动旋转：旋转页必须走 Paddle 底稿路线，或改用 balanced/careful。
 
 ## 输出约定
 
-- 最终交付默认只保留一份可搜索 PDF，统一放在 `OCR成果：可检索PDF/`。仅跑 OCRmyPDF 时，放基础可检索 PDF；若跑 PaddleOCR 高质量或混合增强，则用增强件替换或覆盖为最终件，并清理同源基础 OCR PDF。
-- `OCR成果：可检索PDF/`：唯一最终可搜索 PDF 成果目录；不要再另建 `OCR可检索PDF/`、`PaddleOCR可搜索PDF/` 等并列成品目录。
-- `OCR过程文件/`：除最终成果 PDF 外的全部 OCR 过程文件根目录。
-- `OCR过程文件/OCR文本/`：基础 OCR 文本副本。
-- `OCR过程文件/OCR报告/`：manifest、失败清单、结构检查、质量报告。
-- `OCR过程文件/OCR评估/`：页级分流评估。
-- `OCR过程文件/OCR输入PDF/`：OCR 前的输入副本或归集版本。
-- `OCR过程文件/PaddleOCR缓存/`：PaddleOCR 模型、临时文件和运行缓存。
-- `OCR过程文件/PaddleOCR转写/`：逐页转写文本，供核对；不要整份贴进对话。
-- `OCR过程文件/PaddleOCR文本/`、`OCR过程文件/PaddleOCR结构/`、`OCR过程文件/PaddleOCR报告/`：仅转写/结构化提取时的文本、JSON 和报告。
-- `OCR过程文件/水印与OCR修正备份/`、`OCR过程文件/页面方向调整备份/`、`OCR过程文件/去水印底稿/`：方向、水印、重 OCR 等修正过程的底稿和备份。
-- 不在案件根目录保留 `OCR可检索PDF/`、`PaddleOCR可搜索PDF/`、`PaddleOCR缓存/` 等 OCR 并列目录；如旧流程生成，整理时移入 `OCR过程文件/` 或并入 `OCR成果：可检索PDF/`。
+- `OCR成果/`：每个原件恰好两个文件——`<原名>_OCR.pdf`（唯一最终可检索 PDF，增强版验收后替换基础版）和 `<原名>_OCR.md`（逐页文本副本，供检索与引用）。
+- `OCR过程文件/`：`报告/`（评估、manifest、质检、日志）、`底稿/`（无文字层输入与修正备份）、`转写/`（PaddleOCR 转写与 JSON 结构）、`缓存/`（仅源缓存不可用时使用）。
+- 旧流程生成的其他 OCR 目录，整理时并入上述结构。
 
 ## 省算力与省 token
 
-- 先评估，再跑；先抽样，再全量。
-- 能用 OCRmyPDF 达标，就不跑 PaddleOCR。
-- PaddleOCR 优先跑页码范围，不默认全文件。
-- 同一原件默认只保留一份最终可搜索 PDF，统一进入 `OCR成果：可检索PDF/`；其他过程文件统一归入 `OCR过程文件/`，避免基础 OCR 与增强 OCR 并列造成版本歧义。
-- 尊重 manifest 和已存在输出，不随意 `--overwrite`。
-- 法律分析用 `rg`、页码、关键词、人名、案号、金额定向检索，不把 OCR 全文塞进聊天。
+- 先评估再跑，先抽样再全量；OCRmyPDF 达标就不上 PaddleOCR；PaddleOCR 只跑评估页码。
+- 尊重 manifest 和已有输出，不随意 `--overwrite`。
+- 法律分析用 `rg` 在 `OCR成果/*.md` 定向检索（关键词、人名、案号、金额），不把全文塞进对话。
+
+## 跨 Agent 使用
+
+脚本是普通本地 Python，其他 agent（workbuddy、Claude、Hermes）可按同一流程直接调用；跨 agent 状态写 `.agents-shared/state/board.yaml`。
 
 ## 依赖与兜底
 
-依赖缺失、PaddleOCR 缓存、OCRmyPDF 参数、故障排查见 `references/install-and-fallbacks.md`。未经用户明确授权，不上传法律 PDF 到云端 OCR。
+安装检查、PaddleOCR 缓存、OCRmyPDF 参数细节、故障排查见 `references/install-and-fallbacks.md`。

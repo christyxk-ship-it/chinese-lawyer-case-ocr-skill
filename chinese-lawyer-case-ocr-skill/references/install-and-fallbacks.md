@@ -41,7 +41,7 @@ tesseract --list-langs
 
 ## PaddleOCR 增强路线
 
-主路线 OCRmyPDF 跑完后，对疑难材料使用 PaddleOCR，尤其是截图、复杂表格、印章、低质量扫描件，以及 Tesseract 提取文字异常偏少的文件。PaddleOCR 不替代 OCRmyPDF 生成可检索 PDF；它生成文本副本和 JSON/坐标副本，供审阅、提取和质量比对使用，不能单独作为最终 OCR 交付。
+主路线 OCRmyPDF 跑完后，对疑难材料使用 PaddleOCR，尤其是截图、复杂表格、印章、低质量扫描件，以及 Tesseract 提取文字异常偏少的文件。PaddleOCR 有两条路线，作用不同：`paddleocr_extract.py` 只生成文本和 JSON/坐标副本，供审阅比对，不是最终交付件；`paddle_searchable_pdf.py` 生成可搜索 PDF，验收通过后可以作为最终件替换基础 OCR 版本。
 
 如果目标是更干净的可搜索 PDF，而不是只要文本/坐标，使用 `scripts/paddle_searchable_pdf.py`。该路线借鉴了逐行 bbox 叠加隐形文字层的做法，识别更干净，但速度慢、耗算力更高，只用于核心文件、疑难页或低质量输出的二次增强：
 
@@ -59,19 +59,17 @@ PaddleOCR 可搜索 PDF 档位：
 
 节省算力原则：能只跑低文本页、表格页、核心证据页，就不要全文件跑；能用 `--profile fast` 判断质量，就不要直接上 `careful`；能用 OCRmyPDF 达标，就不要重复跑 PaddleOCR。
 
-方向、水印或旧文字层处理原则：PaddleOCR 生成可搜索 PDF 时，选中页应来自视觉方向正确、无旧文字层的图片底稿。修复已有 OCR 成品时，先把需要重做的页输出到 `OCR过程文件/OCR输入PDF/`，再用 `--fail-if-selected-has-text` 防止把新文字层叠到旧文字层上。
+方向、水印或旧文字层处理原则：PaddleOCR 生成可搜索 PDF 时，选中页应来自视觉方向正确、无旧文字层的图片底稿。修复已有 OCR 成品时，先把需要重做的页输出到 `OCR过程文件/底稿/`（qpdf 修方向 + gs 栅格化，见 SKILL.md 第 3 步），再用 `--fail-if-selected-has-text` 防止把新文字层叠到旧文字层上。
 
-本机当前环境：
+PaddleOCR 环境位置（脚本按此顺序自动探测）：
 
-```bash
-/Users/xuqianchuan/Documents/Codex/tools/paddleocr/bin/python
-/Users/xuqianchuan/Documents/Codex/tools/paddleocr/cache
-```
+1. 环境变量 `CASE_OCR_PADDLE_ROOT` 指定的目录
+2. `~/.case-pdf-ocr/paddle`（标准安装位置，INSTALL.md 创建）
+3. `~/Codex/tools/paddleocr`（本机统一工具位置）
 
-2026-07-02 已验证安装版本：
+基础依赖解释器同理：`CASE_OCR_PYTHON` > `~/.case-pdf-ocr/venv` > Codex 捆绑运行时 > 当前解释器。
 
-- `paddleocr==3.7.0`
-- `paddlepaddle==3.3.1`
+已验证版本：`paddleocr==3.7.0`、`paddlepaddle==3.3.1`。
 
 常用检查：
 
@@ -80,7 +78,7 @@ python3 scripts/paddleocr_extract.py --check-tools
 python3 scripts/paddleocr_extract.py "/path/to/case-folder" --max-files 1
 ```
 
-PaddleOCR 脚本检测到 `/Users/xuqianchuan/Documents/Codex/tools/paddleocr/bin/python` 存在时，会自动用该 Python 重新执行自己。`paddle_searchable_pdf.py` 默认使用当前工作目录下的 `OCR过程文件/PaddleOCR缓存/`，并会复用已下载的 PP-OCRv6 检测/识别模型，避免在受限环境里写入不可写缓存目录。
+PaddleOCR 脚本探测到上述任一环境的 `bin/python` 时，会自动用该 Python 重新执行自己。缓存默认逻辑：优先使用 PaddleOCR 环境目录下的全局 `cache/`（模型只下载/保存一份，不逐案卷复制）；该位置不可写时才退回案卷根目录下的 `OCR过程文件/缓存/`；也可用 `--cache-dir` 显式指定。首次运行需联网下载一次 OCR 模型，之后完全离线。
 
 简体中文 PaddleOCR 默认设置：
 
@@ -141,9 +139,9 @@ ocrmypdf -l chi_sim+eng --skip-text --output-type pdf sanitized.pdf output.pdf
 
 `careful` 档位只有在本机存在 `unpaper` 时才自动启用 `--clean-final`。如果缺少 `unpaper`，不要让 OCR 因清理步骤失败而中断；首要目标仍然是生成可检索 PDF。只有用户明确要求更强清理效果时，才考虑安装 `unpaper` 后重跑。
 
-脚本每处理一个文件就写入 `ocr_manifest.csv`；默认跳过既有 `ok`/`exists` 记录；除非传入 `--no-sidecar-text`，否则创建 `OCR过程文件/OCR文本/` 文本副本；除非传入 `--no-pdf-check`，否则对 OCR 输出运行 `qpdf --check`；每次都会写入 `page_text_manifest.csv` 逐页文字量清单；最后写入 `OCR质量检查.md`。
+脚本每处理一个文件就写入 `ocr_manifest.csv`（与既有记录合并，分批运行不丢历史行）；默认跳过既有 `ok`/`exists` 记录；除非传入 `--no-sidecar-text`，否则在 `OCR成果/` 生成 `<原名>_OCR.md` 文本副本；除非传入 `--no-pdf-check`，否则对 OCR 输出运行 `qpdf --check`；每次都会写入 `page_text_manifest.csv` 逐页文字量清单；最后写入 `OCR质量检查.md`。
 
-完成判断以 `OCR成果：可检索PDF/` 中的可搜索 PDF 为准：文件必须存在、可打开、可检索，通过结构检查，并通过逐页文字层检查。文本副本、PaddleOCR 结果和报告只用于质检、检索辅助和疑难材料增强，统一归入 `OCR过程文件/`。
+完成判断以 `OCR成果/` 中的可搜索 PDF 为准：文件必须存在、可打开、可检索，通过结构检查，并通过逐页文字层检查。PaddleOCR 转写、JSON 结构和各类报告只用于质检、检索辅助和疑难材料增强，统一归入 `OCR过程文件/`。
 
 ## 质量信号
 

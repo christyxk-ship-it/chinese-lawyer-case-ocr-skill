@@ -17,3 +17,5 @@ PaddleOCR文本/
 PaddleOCR结构/
 PaddleOCR报告/
 *.log
+OCR成果/
+tmp/

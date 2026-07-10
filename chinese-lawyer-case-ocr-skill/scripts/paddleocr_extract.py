@@ -17,10 +17,23 @@ from pathlib import Path
 from typing import Iterable, Any
 
 
-DEFAULT_TOOL_ROOT = Path("/Users/xuqianchuan/Documents/Codex/tools/paddleocr")
-DEFAULT_PADDLEOCR_PYTHON = DEFAULT_TOOL_ROOT / "bin/python"
-SOURCE_CACHE = DEFAULT_TOOL_ROOT / "cache"
-DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "PaddleOCR缓存"
+# PaddleOCR 环境探测顺序：环境变量 CASE_OCR_PADDLE_ROOT > 标准安装位置 > 本机既有位置
+def find_paddle_root() -> Path | None:
+    explicit = os.environ.get("CASE_OCR_PADDLE_ROOT")
+    candidates = ([Path(explicit).expanduser()] if explicit else []) + [
+        Path.home() / ".case-pdf-ocr/paddle",
+        Path.home() / "Codex/tools/paddleocr",
+    ]
+    for root in candidates:
+        if (root / "bin/python").exists():
+            return root.resolve()
+    return None
+
+
+DEFAULT_TOOL_ROOT = find_paddle_root()
+DEFAULT_PADDLEOCR_PYTHON = DEFAULT_TOOL_ROOT / "bin/python" if DEFAULT_TOOL_ROOT else None
+SOURCE_CACHE = DEFAULT_TOOL_ROOT / "cache" if DEFAULT_TOOL_ROOT else None
+DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "缓存"
 
 INPUT_SUFFIXES = {
     ".pdf",
@@ -46,29 +59,38 @@ MANIFEST_FIELDS = [
 ]
 
 
-def preparse_cache_dir(argv: list[str]) -> Path:
+def preparse_cache_dir(argv: list[str]) -> str | None:
     for index, arg in enumerate(argv):
         if arg == "--cache-dir" and index + 1 < len(argv):
-            return Path(argv[index + 1]).expanduser().resolve()
+            return argv[index + 1]
         if arg.startswith("--cache-dir="):
-            return Path(arg.split("=", 1)[1]).expanduser().resolve()
-    return DEFAULT_CACHE_DIR
+            return arg.split("=", 1)[1]
+    return None
+
+
+def resolve_cache_dir(explicit: str | None) -> Path:
+    # 未显式指定且全局缓存可写时直接使用，模型只下载/保存一份，不逐案卷复制
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    if SOURCE_CACHE is not None and os.access(SOURCE_CACHE.parent, os.W_OK):
+        return SOURCE_CACHE.resolve()
+    return DEFAULT_CACHE_DIR.resolve()
 
 
 def maybe_reexec_with_paddle_python() -> None:
     if os.environ.get("CASE_PDF_OCR_PADDLE_REEXEC"):
         return
-    if not DEFAULT_PADDLEOCR_PYTHON.exists():
+    if DEFAULT_PADDLEOCR_PYTHON is None or not DEFAULT_PADDLEOCR_PYTHON.exists():
         return
     if Path(sys.prefix).resolve() == DEFAULT_TOOL_ROOT.resolve():
         return
     env = os.environ.copy()
     env["CASE_PDF_OCR_PADDLE_REEXEC"] = "1"
-    env.setdefault("PADDLE_PDX_CACHE_HOME", str(preparse_cache_dir(sys.argv[1:])))
+    env.setdefault("PADDLE_PDX_CACHE_HOME", str(resolve_cache_dir(preparse_cache_dir(sys.argv[1:]))))
     os.execve(str(DEFAULT_PADDLEOCR_PYTHON), [str(DEFAULT_PADDLEOCR_PYTHON), __file__, *sys.argv[1:]], env)
 
 
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(preparse_cache_dir(sys.argv[1:])))
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(resolve_cache_dir(preparse_cache_dir(sys.argv[1:]))))
 maybe_reexec_with_paddle_python()
 
 
@@ -79,9 +101,10 @@ def load_paddleocr():
         return PaddleOCR
     except Exception as exc:
         raise SystemExit(
-            "PaddleOCR is not importable. Install it in "
-            f"{DEFAULT_TOOL_ROOT} or run this script with a Python environment "
-            f"that has paddleocr installed. Original error: {exc}"
+            f"PaddleOCR 不可用（{exc}）。请按 INSTALL.md 创建环境：\n"
+            "  python3 -m venv ~/.case-pdf-ocr/paddle\n"
+            "  ~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab\n"
+            "或设置环境变量 CASE_OCR_PADDLE_ROOT 指向已装好 paddleocr 的虚拟环境目录。"
         )
 
 
@@ -108,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", help="Directory for text sidecars")
     parser.add_argument("--json-dir", help="Directory for PaddleOCR JSON results")
     parser.add_argument("--report-dir", help="Directory for manifest and QA report")
-    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE_DIR), help="PaddleX/PaddleOCR cache directory")
+    parser.add_argument("--cache-dir", help="PaddleX/PaddleOCR cache directory; default reuses the source cache when available")
     parser.add_argument("--max-files", type=int, help="Process only the first N files")
     parser.add_argument("--no-recursive", action="store_true", help="Do not recurse folders")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs")
@@ -148,13 +171,15 @@ def common_root(paths: list[str], files: list[Path]) -> Path:
 
 def default_dirs(root: Path, args: argparse.Namespace) -> tuple[Path, Path, Path]:
     process_dir = root / "OCR过程文件"
-    text_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else process_dir / "PaddleOCR文本"
-    json_dir = Path(args.json_dir).expanduser().resolve() if args.json_dir else process_dir / "PaddleOCR结构"
-    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "PaddleOCR报告"
+    text_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else process_dir / "转写"
+    json_dir = Path(args.json_dir).expanduser().resolve() if args.json_dir else process_dir / "转写"
+    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "报告"
     return text_dir, json_dir, report_dir
 
 
 def ensure_cache(cache_dir: Path) -> None:
+    if SOURCE_CACHE is None or cache_dir == SOURCE_CACHE.resolve():
+        return
     (cache_dir / "official_models").mkdir(parents=True, exist_ok=True)
     source_models = SOURCE_CACHE / "official_models"
     for model in ("PP-OCRv6_medium_det", "PP-OCRv6_medium_rec"):
@@ -290,7 +315,7 @@ def print_tool_status(args: argparse.Namespace) -> None:
 
 def main() -> int:
     args = parse_args()
-    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    cache_dir = resolve_cache_dir(args.cache_dir)
     os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_dir)
     if args.check_tools:
         print_tool_status(args)

@@ -1,110 +1,77 @@
-# 中文执业律师案卷OCR-SKILL
+# 中文律师案卷 OCR 技能包
 
-面向中文执业律师案卷材料的本地 OCR skill。目标不是“转出一堆文本”，而是把扫描件、图片型 PDF等转成 **可打开、可检索、结构检查通过的 PDF**。
+把扫描件、图片型的中文法律案卷 PDF，在**你自己的电脑上**转成**可搜索、可复制文字**的 PDF，并附带一份同名 Markdown 文本副本和逐页质检报告。
 
-## 适用场景
+给你的 AI 助手（WorkBuddy、Codex、Claude Code 等）装上这个技能包，之后只要说一句"帮我 OCR 这个案卷文件夹"，剩下的它自己完成。
 
-- 中文刑事和民事诉讼案卷PDF批量 OCR。
-- 中文扫描 PDF、图片型 PDF。
-- 需要在速度、准确率、算力之间做分层处理：普通页快速 OCR，疑难页高质量增强。
+## 为什么律师需要它
 
-## Skill 名称
+- **全程本地处理，绝不上传**：案卷不出电脑，没有云端 OCR 的保密风险。
+- **交付的是可检索 PDF**，不是一堆散落的文本：原件外观不变，文字层隐形叠加，可搜索、可复制、可高亮，任何主流阅读器都能读。
+- **自带质检闭环**：逐页文字量清单、结构检查、双提取器验收、失败清单——哪页识别不好，报告会告诉你，不必逐页肉眼排查。
+- **省算力的分流设计**：先逐页评估，普通页用快速引擎批量跑，疑难页（表格、横页、低质量扫描）才动用高精度引擎。
 
-- GitHub 展示名：`中文执业律师案卷OCR-SKILL`
-- Codex skill 机器名：`chinese-lawyer-case-ocr-skill`
+## 系统要求
 
-Codex skill 的 `name` 字段必须使用小写英文、数字和短横线，所以机器名不能直接写中文。
+- macOS（Apple 芯片或 Intel 均可）
+- 一个能执行本地命令的 AI 助手：WorkBuddy / Codex / Claude Code 任选
+- 首次安装需联网（下载 OCR 引擎和模型，之后完全离线可用）
 
-## 核心流程
+## 安装（三步，不需要懂技术）
 
-1. 先做页级评估，判断哪些页适合 OCRmyPDF，哪些页适合 PaddleOCR。
-2. OCRmyPDF/Tesseract 批量生成基础可检索 PDF。
-3. PaddleOCR 只处理核心、疑难、表格密集或低质量页面。
-4. 横向、旋转、去水印页面先生成视觉方向正确且无旧文字层的输入底稿，再重建文字层。
-5. 输出质量报告、失败清单、文本副本、结构检查结果和逐页文字层清单。
+1. 点本页绿色 **Code** 按钮 → **Download ZIP**，下载后解压（比如放在"下载"文件夹）。
+2. 打开你的 AI 助手，把下面这句话发给它（路径换成你解压后的实际位置）：
 
-## 目录
+   > 我下载了一个"中文律师案卷 OCR"技能包，文件夹在 ~/Downloads/chinese-lawyer-case-ocr-skill-main。请阅读其中的 INSTALL.md 并严格按步骤执行，把 skill 安装到你的技能目录，完成后运行自检并把结果告诉我。
+
+3. 等它装完并报告自检通过，就可以用了。
+
+会用终端的朋友也可以直接运行仓库里的 `install.sh` 一键安装。
+
+## 怎么用
+
+把案卷 PDF 放进一个文件夹，对你的 AI 说：
+
+> 用 chinese-lawyer-case-ocr-skill 对 <案卷文件夹路径> 做 OCR。
+
+完成后得到：
 
 ```text
-chinese-lawyer-case-ocr-skill/
-├── SKILL.md
-├── agents/openai.yaml
-├── references/install-and-fallbacks.md
-└── scripts/
-    ├── assess_ocr_strategy.py
-    ├── ocr_case_pdfs.py
-    ├── paddle_searchable_pdf.py
-    └── paddleocr_extract.py
+案卷文件夹/
+├── OCR成果/
+│   ├── 某某卷宗_OCR.pdf   ← 可搜索 PDF（唯一最终交付件）
+│   └── 某某卷宗_OCR.md    ← 逐页文本副本（全文检索、引用摘录用）
+└── OCR过程文件/
+    ├── 报告/               ← 评估、清单、质检报告、日志
+    ├── 底稿/               ← 方向/水印修正的无文字层底稿
+    ├── 转写/               ← 高精度引擎的逐页转写与坐标
+    └── 缓存/               ← 仅全局缓存不可用时使用
 ```
 
-## 快速使用
+## 常见问题
 
-进入 skill 目录后：
+- **文件会被上传吗？** 不会。OCR 引擎（OCRmyPDF/Tesseract、PaddleOCR）全部跑在本机，"未经授权不上传案卷"是本技能包写死的红线。
+- **首次运行为什么要联网？** 只为下载一次 OCR 模型（保存在本机全局缓存），之后离线可用。
+- **识别不准的页怎么办？** 看 `OCR过程文件/报告/OCR质量检查.md`，低文本页会被列出来供人工核对；手写和印章内容建议始终以原图为准。
 
-```bash
-python3 scripts/assess_ocr_strategy.py "/path/to/PDF-or-folder" --output-dir "OCR过程文件/OCR评估"
-python3 scripts/ocr_case_pdfs.py "/path/to/PDF-or-folder" --mode skip-text --profile fast --sanitize-input always --languages chi_sim+eng --output-dir "OCR成果：可检索PDF" --report-dir "OCR过程文件/OCR报告" --text-dir "OCR过程文件/OCR文本"
+## 目录结构
+
+```text
+chinese-lawyer-case-ocr-skill/   ← skill 本体（SKILL.md + 脚本 + 参考文档）
+INSTALL.md                       ← 给 AI 助手看的安装说明
+install.sh                       ← 一键安装脚本（可选）
+tools/                           ← 维护者工具
 ```
 
-如评估结果建议某些页使用 PaddleOCR：
+## 维护同步（仓库维护者用）
+
+本机源 skill 位于 `~/.codex/skills/case-pdf-ocr`，公开仓库使用机器名 `chinese-lawyer-case-ocr-skill`，不要整目录直接覆盖，用同步脚本：
 
 ```bash
-python3 scripts/paddle_searchable_pdf.py "OCR过程文件/OCR输入PDF/input_方向水印处理后.pdf" "OCR成果：可检索PDF/input_hybrid.pdf" --base-pdf "OCR成果：可检索PDF/input_OCR.pdf" --pages "3,24,29-30" --profile balanced --fail-if-selected-has-text --dump-text "OCR过程文件/PaddleOCR转写/input_hybrid.txt" --cache-dir "OCR过程文件/PaddleOCR缓存"
-```
-
-## 输出
-
-- `OCR成果：可检索PDF/`：唯一最终可搜索 PDF 成果目录。
-- `OCR过程文件/`：除最终成果 PDF 外的全部 OCR 过程文件根目录。
-- `OCR过程文件/OCR评估/`：页级分流评估。
-- `OCR过程文件/OCR文本/`：基础 OCR 文本副本。
-- `OCR过程文件/OCR报告/`：manifest、失败清单、结构检查、质量报告和 `page_text_manifest.csv`。
-- `OCR过程文件/OCR输入PDF/`：OCR 前的输入副本或方向/水印处理后的底稿。
-- `OCR过程文件/PaddleOCR缓存/`：PaddleOCR 模型、临时文件和运行缓存。
-- `OCR过程文件/PaddleOCR转写/`：PaddleOCR 逐页转写文本。
-
-## 质量防线
-
-- 最终可搜索 PDF 只保留一份，避免基础 OCR 和增强 OCR 并列造成版本歧义。
-- 方向调整、裁边、去水印后，必须从无旧文字层底稿重建文字层。
-- PaddleOCR 覆盖疑难页时使用 `--fail-if-selected-has-text`，防止新旧文字层叠加。
-- 最终验收查看 `OCR过程文件/OCR报告/最终检查/page_text_manifest.csv`，逐页核对后几页、横页、签章页和附件页。
-
-## 维护同步
-
-本机源 skill 位于 `~/.codex/skills/case-pdf-ocr`。公开仓库使用英文机器名 `chinese-lawyer-case-ocr-skill`，因此不要直接整目录覆盖。用仓库脚本同步：
-
-```bash
-python3 tools/sync_from_local_skill.py
+python3 tools/sync_from_local_skill.py            # 同步并校验
 python3 tools/sync_from_local_skill.py --commit --push
 ```
 
-脚本会复制 `SKILL.md` 正文、`scripts/`、`references/`，保留公开版 frontmatter 和 `agents/openai.yaml`，然后运行语法检查与 skill 校验。只有校验通过且存在真实差异时，才会提交和推送。
+## 许可
 
-## 依赖
-
-主路线依赖：
-
-- OCRmyPDF
-- Tesseract，含 `chi_sim`、`eng`，必要时加 `chi_tra`
-- Ghostscript
-- qpdf
-
-高质量增强路线依赖：
-
-- PaddleOCR
-- PaddlePaddle
-- pypdfium2
-- pypdf
-- reportlab
-- numpy
-
-详细安装、兜底和故障处理见 `chinese-lawyer-case-ocr-skill/references/install-and-fallbacks.md`。
-
-## 隐私边界
-
-默认全部本地运行。未经律师或材料所有人明确授权，不上传案卷材料到云端。
-
-## License
-
-MIT License. 详见 `LICENSE`。
+MIT License，详见 `LICENSE`。欢迎转发给需要的同行。

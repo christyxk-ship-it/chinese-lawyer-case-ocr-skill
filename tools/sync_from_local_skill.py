@@ -19,10 +19,8 @@ from pathlib import Path
 
 RELEASE_SKILL_NAME = "chinese-lawyer-case-ocr-skill"
 RELEASE_DESCRIPTION = (
-    "中文执业律师案卷 OCR skill。批量 OCR 并质检中文法律案件 PDF，首要交付可打开、可检索、"
-    "结构检查通过的 PDF 副本。用于把扫描件或图片型案卷材料转成可检索 PDF，并在速度、"
-    "准确率、算力/token 之间先评估再分流：OCRmyPDF/Tesseract 负责批量基础 OCR，"
-    "PaddleOCR 负责核心、疑难、表格、低质页面的高质量增强。"
+    "在本地把扫描件/图片型中文法律案卷 PDF 转成可检索 PDF 并质检。当用户要求 OCR 案卷、"
+    "让判决书等扫描 PDF 可搜索/可复制文字、给 PDF 加文字层，或提供的 PDF 无法选中文字时使用。"
 )
 AGENT_OPENAI_YAML = """interface:
   display_name: "中文执业律师案卷OCR-SKILL"

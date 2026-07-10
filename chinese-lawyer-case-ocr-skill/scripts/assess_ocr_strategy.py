@@ -12,28 +12,39 @@ from pathlib import Path
 from statistics import mean
 
 
-BUNDLED_PYTHON = Path(
-    "/Users/xuqianchuan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+# 依赖解释器探测顺序：环境变量 CASE_OCR_PYTHON > 标准安装位置 > Codex 捆绑运行时 > 当前解释器
+PYTHON_CANDIDATES = (
+    Path.home() / ".case-pdf-ocr/venv/bin/python3",
+    Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3",
 )
 
 
 def adapt_runtime() -> None:
-    if (
-        not os.environ.get("CASE_PDF_OCR_ASSESS_REEXEC")
-        and BUNDLED_PYTHON.exists()
-        and Path(sys.executable).resolve() != BUNDLED_PYTHON.resolve()
-    ):
-        env = os.environ.copy()
-        env["CASE_PDF_OCR_ASSESS_REEXEC"] = "1"
-        env.pop("PYTHONPATH", None)
-        os.execve(str(BUNDLED_PYTHON), [str(BUNDLED_PYTHON), __file__, *sys.argv[1:]], env)
+    if os.environ.get("CASE_PDF_OCR_ASSESS_REEXEC"):
+        return
+    explicit = os.environ.get("CASE_OCR_PYTHON")
+    candidates = ([Path(explicit).expanduser()] if explicit else []) + list(PYTHON_CANDIDATES)
+    for python in candidates:
+        if python.exists() and Path(sys.executable).resolve() != python.resolve():
+            env = os.environ.copy()
+            env["CASE_PDF_OCR_ASSESS_REEXEC"] = "1"
+            env.pop("PYTHONPATH", None)
+            os.execve(str(python), [str(python), __file__, *sys.argv[1:]], env)
 
 
 adapt_runtime()
 
-import numpy as np  # noqa: E402
-import pypdfium2 as pdfium  # noqa: E402
-from pypdf import PdfReader  # noqa: E402
+try:
+    import numpy as np  # noqa: E402
+    import pypdfium2 as pdfium  # noqa: E402
+    from pypdf import PdfReader  # noqa: E402
+except ImportError as exc:
+    raise SystemExit(
+        f"缺少 Python 依赖：{exc.name}。请按 INSTALL.md 创建环境：\n"
+        "  python3 -m venv ~/.case-pdf-ocr/venv\n"
+        "  ~/.case-pdf-ocr/venv/bin/pip install numpy pypdf pypdfium2 pillow reportlab\n"
+        "或设置环境变量 CASE_OCR_PYTHON 指向已装齐依赖的 Python。"
+    )
 
 
 FIELDS = [
@@ -98,7 +109,7 @@ def common_root(paths: list[str], pdfs: list[Path]) -> Path:
 
 
 def safe_name(pdf: Path) -> str:
-    return re.sub(r"[^0-9A-Za-z._-]+", "_", pdf.stem).strip("_") or "pdf"
+    return re.sub(r"[\\/:*?\"<>|\s]+", "_", pdf.stem).strip("_") or "pdf"
 
 
 def page_text_chars(page: object) -> int:
@@ -259,9 +270,9 @@ def main() -> int:
         print("No PDF files found.", file=sys.stderr)
         return 2
     root = common_root(args.paths, pdfs)
-    excluded_roots = (root / "OCR成果：可检索PDF", root / "OCR过程文件")
+    excluded_roots = (root / "OCR成果", root / "OCR过程文件")
     pdfs = [p for p in pdfs if not any(is_under(p, excluded) for excluded in excluded_roots)]
-    report_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR过程文件" / "OCR评估"
+    report_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR过程文件" / "报告"
     rows: list[dict[str, str]] = []
     for pdf in pdfs:
         print(f"评估 {pdf}", flush=True)

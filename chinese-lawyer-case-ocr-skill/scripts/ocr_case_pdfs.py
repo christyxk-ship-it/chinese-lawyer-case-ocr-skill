@@ -23,9 +23,12 @@ def load_pdf_reader():
         return reader
     except Exception:
         pass
-    bundled = Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib"
-    for site_packages in bundled.glob("python*/site-packages"):
-        sys.path.append(str(site_packages))
+    for bundled in (
+        Path.home() / ".case-pdf-ocr/venv/lib",
+        Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib",
+    ):
+        for site_packages in bundled.glob("python*/site-packages"):
+            sys.path.append(str(site_packages))
     try:
         from pypdf import PdfReader as reader
 
@@ -187,15 +190,15 @@ def common_root(paths: list[str], pdfs: list[Path]) -> Path:
 
 def default_output_dirs(root: Path, args: argparse.Namespace) -> tuple[Path, Path]:
     process_dir = root / "OCR过程文件"
-    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR成果：可检索PDF"
-    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "OCR报告"
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR成果"
+    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "报告"
     return output_dir, report_dir
 
 
-def default_text_dir(root: Path, args: argparse.Namespace) -> Path:
+def default_text_dir(output_dir: Path, args: argparse.Namespace) -> Path:
     if args.text_dir:
         return Path(args.text_dir).expanduser().resolve()
-    return root / "OCR过程文件" / "OCR文本"
+    return output_dir
 
 
 def should_exclude(pdf: Path, output_dir: Path, report_dir: Path, process_dir: Path) -> bool:
@@ -382,13 +385,17 @@ def run_ocr(args: argparse.Namespace, src: Path, dst: Path, log_path: Path) -> t
             sanitized.unlink(missing_ok=True)
 
 
-def write_manifest(report_dir: Path, rows: list[dict[str, str]]) -> None:
+def write_manifest(report_dir: Path, rows: list[dict[str, str]], base: dict[str, dict[str, str]] | None = None) -> None:
+    merged: dict[str, dict[str, str]] = dict(base or {})
+    for row in rows:
+        merged[row["source"]] = row
+    all_rows = list(merged.values())
     report_dir.mkdir(parents=True, exist_ok=True)
     with (report_dir / "ocr_manifest.csv").open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=MANIFEST_FIELDS)
         writer.writeheader()
-        writer.writerows(rows)
-    failures = [row for row in rows if row["status"] not in {"ok", "exists", "scan-only"}]
+        writer.writerows(all_rows)
+    failures = [row for row in all_rows if row["status"] not in {"ok", "exists", "scan-only"}]
     failed_path = report_dir / "failed_pdfs.txt"
     if failures:
         with failed_path.open("w", encoding="utf-8") as handle:
@@ -414,7 +421,7 @@ def extract_text(pdf: Path) -> tuple[str, str]:
         parts: list[str] = []
         for page_number, page in enumerate(reader.pages, start=1):
             text = page.extract_text() or ""
-            parts.append(f"\n\n===== Page {page_number} =====\n{text}")
+            parts.append(f"\n\n## 第 {page_number} 页\n\n{text}")
         return ("".join(parts).strip() + "\n"), ""
     except Exception as exc:
         return "", str(exc)
@@ -496,7 +503,7 @@ def sidecar_text_path(pdf: Path, output_dir: Path, text_dir: Path) -> Path:
         rel = pdf.relative_to(output_dir)
     except ValueError:
         rel = Path(pdf.name)
-    return (text_dir / rel).with_suffix(".txt")
+    return (text_dir / rel).with_suffix(".md")
 
 
 def write_sidecars(report_dir: Path, output_dir: Path, text_dir: Path, rows: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -673,7 +680,7 @@ def main() -> int:
         pdfs = pdfs[: args.max_files]
     root = common_root(args.paths, pdfs)
     output_dir, report_dir = default_output_dirs(root, args)
-    text_dir = default_text_dir(root, args)
+    text_dir = default_text_dir(output_dir, args)
     process_dir = root / "OCR过程文件"
     pdfs = [p for p in pdfs if not should_exclude(p, output_dir, report_dir, process_dir)]
 
@@ -698,7 +705,7 @@ def main() -> int:
         ):
             rows.append(existing)
             print(f"[{index}/{len(pdfs)}] resume {src}")
-            write_manifest(report_dir, rows)
+            write_manifest(report_dir, rows, existing_rows)
             continue
 
         before = inspect_pdf(src, args.sample_pages)
@@ -717,18 +724,18 @@ def main() -> int:
 
         if args.mode == "scan-only":
             rows.append(row)
-            write_manifest(report_dir, rows)
+            write_manifest(report_dir, rows, existing_rows)
             continue
         if before.error == "encrypted":
             row["status"] = "encrypted"
             rows.append(row)
-            write_manifest(report_dir, rows)
+            write_manifest(report_dir, rows, existing_rows)
             continue
         if dst.exists() and not args.overwrite:
             row["status"] = "exists"
             row["note"] = "output exists; pass --overwrite to replace"
             rows.append(row)
-            write_manifest(report_dir, rows)
+            write_manifest(report_dir, rows, existing_rows)
             continue
 
         status, note = run_ocr(args, src, dst, log_path)
@@ -744,9 +751,9 @@ def main() -> int:
             elif after.sample_text_chars < 20:
                 row["note"] = "low extracted text after OCR; spot-check visually"
         rows.append(row)
-        write_manifest(report_dir, rows)
+        write_manifest(report_dir, rows, existing_rows)
 
-    write_manifest(report_dir, rows)
+    write_manifest(report_dir, rows, existing_rows)
     page_text_rows = write_page_text_manifest(report_dir, rows)
     sidecar_rows = None
     if args.mode != "scan-only" and not args.no_sidecar_text:
