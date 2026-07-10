@@ -21,6 +21,8 @@
 
 1. 把下载链接发给你的Agent（Codex，Claude，workbuddy），告诉它：安装本Skill并适配。即可。下载链接：https://github.com/christyxk-ship-it/chinese-lawyer-case-ocr-skill
 
+（AI 助手看这里：请克隆或下载本仓库，阅读 `INSTALL.md` 并严格按步骤安装、自检，完成后向用户报告结果。）
+
 ## 怎么用
 
 打开案卷 PDF 所在文件夹，对你的 AI 说：
