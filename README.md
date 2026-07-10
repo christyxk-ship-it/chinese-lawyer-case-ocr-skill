@@ -67,4 +67,4 @@ python3 tools/sync_from_local_skill.py --commit --push
 
 ## 许可
 
-MIT License，详见 `LICENSE`。欢迎复制链接转发给需要的同行，我会继续维护和迭代。
+MIT License，详见 `LICENSE`。欢迎大家反馈和建议，我会继续维护和迭代。
