@@ -6,8 +6,8 @@
 
 ```bash
 uname -s          # 期望 Darwin
-which brew        # 无输出则需先安装 Homebrew（第 1 步）
-python3 --version # 期望 3.10+
+which brew        # 无输出则按第 1 步的"没有 Homebrew 时的人机分工"处理
+python3 --version # 期望 3.10+；低于 3.10 见第 1 步末尾的"Python 补救"
 ```
 
 ## 1. 命令行工具（OCR 主引擎）
@@ -16,7 +16,6 @@ python3 --version # 期望 3.10+
 brew install ocrmypdf qpdf ghostscript tesseract tesseract-lang
 ```
 
-- 没有 Homebrew 时，先征得用户同意再安装：https://brew.sh 官方脚本。
 - 自检（三项都必须通过）：
 
 ```bash
@@ -24,6 +23,32 @@ which ocrmypdf qpdf gs tesseract        # 四个都要有路径
 tesseract --list-langs | grep chi_sim   # 必须包含 chi_sim
 ocrmypdf --version
 ```
+
+### 没有 Homebrew 时的人机分工
+
+安装 Homebrew 需要用户本人输入开机密码。**你（AI）绝不索要密码、绝不代输密码，也不要卡在等待系统写权限上**——改为引导用户亲手完成这一步：
+
+1. 先查命令行工具：`xcode-select -p`；未安装则运行 `xcode-select --install`，等用户在弹窗里点完"安装"再继续。
+2. 把下面这条官方安装命令原样展示给用户，请用户打开"终端"App 粘贴运行，并提前说明：过程中要输入开机密码（屏幕不显示输入是正常的）、中途可能需按回车确认、全程约几分钟：
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+3. 提醒用户：若安装结束时终端提示运行两行 `eval` 开头的命令（把 brew 加入 PATH），照提示执行。
+4. 用户回复"装好了"之后，运行 `brew --version` 验证；找不到时检查 `/opt/homebrew/bin/brew`（Apple 芯片）或 `/usr/local/bin/brew`（Intel）是否存在，并帮用户配置 PATH。
+5. 验证通过后，回到本步开头继续 `brew install`。
+
+### Python 补救（系统 Python 低于 3.10 时）
+
+macOS 自带的 Python 常为 3.9.x，paddlepaddle 等依赖可能装不上。此时：
+
+```bash
+brew install python@3.12
+PYBIN="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+```
+
+后续第 2、3 步创建虚拟环境时，用 `"$PYBIN"` 替代 `python3`。
 
 ## 2. 基础 Python 环境
 
