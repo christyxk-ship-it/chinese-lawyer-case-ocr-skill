@@ -36,8 +36,10 @@ python3 "$SKILL/scripts/ocr_case_pdfs.py" . --mode skip-text --profile fast --sa
 3. 疑难页增强（评估出 paddle 页时）。先生成方向正确、无旧文字层的底稿，再叠加，验收后替换基础版：
 
 ```bash
-qpdf "input.pdf" --rotate=+90:3,7 -- "OCR过程文件/底稿/input_旋转.pdf"        # 如需修方向（示例：第3、7页转90°）
-gs -o "OCR过程文件/底稿/input_底稿.pdf" -sDEVICE=pdfimage24 -r300 "OCR过程文件/底稿/input_旋转.pdf"   # 栅格化：固化方向并剥掉旧文字层
+# 方向判断基准是"阅读器里的显示方向"：gs 栅格化按显示方向渲染并自动消化 /Rotate 标记。
+# 显示已正立的页（含靠 /Rotate 标记正立的）直接 gs，禁止再 --rotate——加了反而会转倒。
+qpdf "input.pdf" --rotate=+90:3,7 -- "OCR过程文件/底稿/input_旋转.pdf"        # 仅当第3、7页在阅读器里显示方向不正时
+gs -o "OCR过程文件/底稿/input_底稿.pdf" -sDEVICE=pdfimage24 -r300 "OCR过程文件/底稿/input_旋转.pdf"   # 栅格化：固化显示方向并剥掉旧文字层
 python3 "$SKILL/scripts/paddle_searchable_pdf.py" "OCR过程文件/底稿/input_底稿.pdf" "OCR成果/input_OCR.new.pdf" \
   --base-pdf "OCR成果/input_OCR.pdf" --pages "$(cat 'OCR过程文件/报告/input.paddle_pages.txt')" \
   --fail-if-selected-has-text --dump-text "OCR过程文件/转写/input.txt"
@@ -57,6 +59,7 @@ mv "OCR成果/input_OCR.new.pdf" "OCR成果/input_OCR.pdf"                      
 ## 防止方向/文字层错位
 
 - 旋转/横向/水印页：先按第 3 步 qpdf+gs 生成底稿再 OCR；禁止在旧 OCR 成品上直接叠文字层，`--fail-if-selected-has-text` 兜底。
+- 方向以阅读器**显示方向**为准：显示正立的页只做 gs 栅格化，不加 `--rotate`（对靠 /Rotate 标记正立的页加 `--rotate` 会把成果转倒）；栅格化后核对底稿页的宽高横竖与显示一致再继续。
 - `--profile fast` 不做自动旋转：旋转页必须走 Paddle 底稿路线，或改用 balanced/careful。
 
 ## 输出约定

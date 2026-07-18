@@ -210,17 +210,20 @@ def ensure_cache(cache_dir: Path) -> None:
             shutil.copytree(src, dst)
 
 
-def build_engine(lang: str):
+def build_engine(lang: str, dynamic: bool = False):
     try:
         from paddleocr import PaddleOCR
     except ImportError as exc:
         raise SystemExit(
             f"PaddleOCR 不可用（{exc}）。请按 INSTALL.md 创建环境：\n"
             "  python3 -m venv ~/.case-pdf-ocr/paddle\n"
-            "  ~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab\n"
+            "  ~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab safetensors\n"
             "或设置环境变量 CASE_OCR_PADDLE_ROOT 指向已装好 paddleocr 的虚拟环境目录。"
         )
 
+    # Intel Mac 锁定 paddlepaddle 3.0.0，其静态推理引擎与 PP-OCRv6 模型不兼容（strides 校验），
+    # 动态引擎（需 safetensors）可绕开；Apple 芯片默认静态引擎不受影响
+    extra = {"engine": "paddle_dynamic"} if dynamic else {}
     attempts = (
         {
             "lang": lang,
@@ -228,9 +231,10 @@ def build_engine(lang: str):
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
             "use_textline_orientation": False,
+            **extra,
         },
-        {"lang": lang, "use_textline_orientation": False},
-        {"lang": lang},
+        {"lang": lang, "use_textline_orientation": False, **extra},
+        {"lang": lang, **extra},
     )
     last_error: Exception | None = None
     for kwargs in attempts:
@@ -372,6 +376,7 @@ def main() -> int:
             )
             return 2
     engine = build_engine(args.lang)
+    engine_dynamic = False
     writer = PdfWriter()
 
     dump_handle = dump.open("w", encoding="utf-8") if dump else None
@@ -395,7 +400,15 @@ def main() -> int:
                 print(f"第{page_no}页: 警告，输入页已有{existing_chars}字文字层，将叠加新文字层", flush=True)
 
             image = np.array(doc[index].render(scale=scale, grayscale=False).to_pil().convert("RGB"))
-            lines = result_to_lines(engine.predict(image))
+            try:
+                lines = result_to_lines(engine.predict(image))
+            except Exception as exc:
+                if engine_dynamic or "strides" not in str(exc):
+                    raise
+                print("静态推理引擎与模型不兼容（strides），自动切换动态引擎重试", flush=True)
+                engine = build_engine(args.lang, dynamic=True)
+                engine_dynamic = True
+                lines = result_to_lines(engine.predict(image))
             writer.add_page(add_overlay(page, lines, scale))
             if dump_handle:
                 dump_handle.write(f"<<<PAGE {page_no}>>>\n" + "\n".join(text for text, _ in lines) + "\n")

@@ -7,7 +7,7 @@
 ```bash
 uname -s          # 期望 Darwin
 which brew        # 无输出则按第 1 步的"没有 Homebrew 时的人机分工"处理
-python3 --version # 期望 3.10+；低于 3.10 见第 1 步末尾的"Python 补救"
+python3 --version # 推荐 3.10+；3.9 实测可用（Intel 老 Mac 自带 3.9.6 亦可跑通）；报版本相关错误时见第 1 步末尾的"Python 补救"
 ```
 
 ## 1. 命令行工具（OCR 主引擎）
@@ -39,9 +39,9 @@ ocrmypdf --version
 4. 用户回复"装好了"之后，运行 `brew --version` 验证；找不到时检查 `/opt/homebrew/bin/brew`（Apple 芯片）或 `/usr/local/bin/brew`（Intel）是否存在，并帮用户配置 PATH。
 5. 验证通过后，回到本步开头继续 `brew install`。
 
-### Python 补救（系统 Python 低于 3.10 时）
+### Python 补救（可选）
 
-macOS 自带的 Python 常为 3.9.x，paddlepaddle 等依赖可能装不上。此时：
+系统 Python 3.9 实测可跑通全部依赖；若安装依赖时因 Python 版本报错，或想用更新版本：
 
 ```bash
 brew install python@3.12
@@ -65,10 +65,12 @@ python3 -m venv ~/.case-pdf-ocr/venv
 ```bash
 python3 -m venv ~/.case-pdf-ocr/paddle
 ~/.case-pdf-ocr/paddle/bin/pip install --upgrade pip
-~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab
+~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab safetensors
 ```
 
 OCR 模型会在首次实际运行时自动下载到 `~/.case-pdf-ocr/paddle/cache/`（全局缓存，只下载一次）。
+
+Intel Mac 注意：paddlepaddle 只会装到 3.0.0（3.1+ 无 Intel 轮子），属正常现象——脚本内置静态→动态引擎自动回退，可正常使用。
 
 ## 4. 安装 skill 本体
 

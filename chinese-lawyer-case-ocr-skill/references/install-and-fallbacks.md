@@ -61,6 +61,8 @@ PaddleOCR 可搜索 PDF 档位：
 
 方向、水印或旧文字层处理原则：PaddleOCR 生成可搜索 PDF 时，选中页应来自视觉方向正确、无旧文字层的图片底稿。修复已有 OCR 成品时，先把需要重做的页输出到 `OCR过程文件/底稿/`（qpdf 修方向 + gs 栅格化，见 SKILL.md 第 3 步），再用 `--fail-if-selected-has-text` 防止把新文字层叠到旧文字层上。
 
+方向陷阱（实测教训）：很多证件/扫描 PDF 是"横向存储 + /Rotate 标记正立显示"。gs 栅格化按显示方向渲染、自动消化 /Rotate，所以显示正立的页**直接 gs 即可**；若误加 `qpdf --rotate`，旋转标记归零后内容就以横向裸奔，成果整体转倒。`--rotate` 只用于阅读器里显示方向本身不正的页。
+
 PaddleOCR 环境位置（脚本按此顺序自动探测）：
 
 1. 环境变量 `CASE_OCR_PADDLE_ROOT` 指定的目录
@@ -69,7 +71,9 @@ PaddleOCR 环境位置（脚本按此顺序自动探测）：
 
 基础依赖解释器同理：`CASE_OCR_PYTHON` > `~/.case-pdf-ocr/venv` > Codex 捆绑运行时 > 当前解释器。
 
-已验证版本：`paddleocr==3.7.0`、`paddlepaddle==3.3.1`。
+已验证版本：`paddleocr==3.7.0`、`paddlepaddle==3.3.1`（Apple 芯片）。
+
+Intel Mac 说明：paddlepaddle 3.1+ 只提供 Apple 芯片轮子，Intel 机只能装 3.0.0，其静态推理引擎与 PP-OCRv6 模型不兼容（strides 报错）。`paddle_searchable_pdf.py` 检测到该错误会自动切换动态引擎重试（依赖 safetensors 包，INSTALL.md 已包含）。Python 3.9 实测可跑通整个 Paddle 栈。
 
 常用检查：
 

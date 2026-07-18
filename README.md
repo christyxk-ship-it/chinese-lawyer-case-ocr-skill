@@ -14,7 +14,7 @@
 
 ## 系统要求(仅限Mac)
 
-- macOS（Apple 芯片或 Intel 均可）
+- macOS，以 Apple 芯片为主；Intel 芯片实测可用，但首次安装排错较多，建议全程交给 AI 助手（Agent）处理
 - 一个能执行本地命令的 AI 助手：WorkBuddy / Codex / Claude Code 任选
 - 首次安装需联网（下载 OCR 引擎和模型，之后完全离线可用）
 - 首次安装需要 Homebrew（Mac 安装专业工具的标准渠道）；没装也没关系，AI 会引导你完成，期间需要你亲手输入一次开机密码

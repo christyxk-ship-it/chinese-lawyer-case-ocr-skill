@@ -1,5 +1,12 @@
 # 发布说明
 
+## v0.3.1
+
+- 方向陷阱修正（Intel Mac 实战反馈）：明确"以阅读器显示方向为准"的底稿规则——显示正立的页（含靠 /Rotate 标记正立的）直接 gs 栅格化，禁止再 `qpdf --rotate`，否则成果整体转倒；SKILL.md 与 references 已写清判断标准。
+- Intel Mac 兼容：paddlepaddle 3.1+ 无 Intel 轮子、3.0.0 静态引擎与 PP-OCRv6 模型不兼容（strides 报错）——`paddle_searchable_pdf.py` 现内置静态→动态引擎自动回退；依赖清单加入 safetensors。
+- Python 版本说明放宽：3.9 实测可跑通全部依赖，推荐 3.10+；INSTALL.md 同步更新。
+- 安装说明补齐"没有 Homebrew 时的人机分工"与 Python 补救路径（干净 Mac 实战反馈）。
+
 ## v0.3.0
 
 - 面向分发的去个人化改造：依赖环境改为自动探测（`CASE_OCR_PYTHON` / `CASE_OCR_PADDLE_ROOT` 环境变量 > `~/.case-pdf-ocr/` 标准安装位置 > 既有位置兜底），脚本内不再含任何个人路径；依赖缺失时给出明确安装指引。

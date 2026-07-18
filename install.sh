@@ -25,7 +25,7 @@ python3 -m venv "$HOME/.case-pdf-ocr/venv"
 say "3/5 创建 PaddleOCR 环境（~/.case-pdf-ocr/paddle，约 1–2 GB，请耐心等待）"
 python3 -m venv "$HOME/.case-pdf-ocr/paddle"
 "$HOME/.case-pdf-ocr/paddle/bin/pip" install --quiet --upgrade pip
-"$HOME/.case-pdf-ocr/paddle/bin/pip" install --quiet paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab
+"$HOME/.case-pdf-ocr/paddle/bin/pip" install --quiet paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab safetensors
 
 say "4/5 安装 skill 到 AI 助手技能目录"
 INSTALLED=""
