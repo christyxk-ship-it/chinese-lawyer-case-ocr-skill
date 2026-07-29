@@ -62,7 +62,7 @@ tools/                           ← 维护者工具
 
 ## 维护同步（仓库维护者用）
 
-本机源 skill 位于 `~/.codex/skills/case-pdf-ocr`，公开仓库使用机器名 `chinese-lawyer-case-ocr-skill`，不要整目录直接覆盖，用同步脚本：
+本机源 skill 位于 `~/.codex/skills/chinese-lawyer-case-ocr-skill`，与公开仓库同名（注意别和依赖环境目录 `~/.case-pdf-ocr/` 混淆，那是 venv 和 PaddleOCR 的安装位置）。不要整目录直接覆盖，用同步脚本：
 
 ```bash
 python3 tools/sync_from_local_skill.py            # 同步并校验

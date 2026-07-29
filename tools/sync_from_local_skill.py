@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Sync the local case-pdf-ocr skill into this public GitHub package.
+"""Sync the local skill into this public GitHub package.
 
-The local source skill uses the private Codex name `case-pdf-ocr`. The public
-package must keep the machine name `chinese-lawyer-case-ocr-skill`, so this
-script copies resources but rewrites the SKILL.md frontmatter.
+Local install and public package now share the machine name
+`chinese-lawyer-case-ocr-skill`. The frontmatter rewrite is kept as a guard so
+the published package keeps that name even if a local copy is renamed.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ AGENT_OPENAI_YAML = """interface:
   default_prompt: "使用 $chinese-lawyer-case-ocr-skill 对中文法律案卷 PDF 做 OCR：先评估分流，再用 OCRmyPDF/Tesseract 批量生成可检索 PDF；对核心、横向、低文本或疑难页面用 PaddleOCR 增强；最终只保留一份可搜索 PDF，并输出逐页文字层质检报告。"
 """
 
-DEFAULT_SOURCE = Path.home() / ".codex" / "skills" / "case-pdf-ocr"
+DEFAULT_SOURCE = Path.home() / ".codex" / "skills" / "chinese-lawyer-case-ocr-skill"
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 PUBLISHED_SKILL_DIR = "chinese-lawyer-case-ocr-skill"
 SYNC_PATHS = [
@@ -41,7 +41,7 @@ IGNORE_NAMES = {"__pycache__", ".DS_Store"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sync local case-pdf-ocr skill into the public package.")
+    parser = argparse.ArgumentParser(description="Sync the local skill into the public package.")
     parser.add_argument("--source", default=str(DEFAULT_SOURCE), help="local source skill directory")
     parser.add_argument("--repo", default=str(DEFAULT_REPO), help="public release repository root")
     parser.add_argument("--commit", action="store_true", help="commit synced changes")
