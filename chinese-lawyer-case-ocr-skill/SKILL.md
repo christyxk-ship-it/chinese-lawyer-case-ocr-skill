@@ -47,13 +47,43 @@ gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -sOutputFile=- "OCR成果/input_OCR.ne
 mv "OCR成果/input_OCR.new.pdf" "OCR成果/input_OCR.pdf"                        # 验收通过后替换，只留一份
 ```
 
-4. 验收：重跑第 2 步命令即可——manifest 断点续跑不会重复 OCR，只从最终 PDF 刷新 md 副本、逐页文字量清单和结构检查。然后核对 `OCR过程文件/报告/` 下的 `OCR质量检查.md` 与 `page_text_manifest.csv`：页数一致、逐页文字量无异常，后几页、横页、签章页逐页核对。签章页文字少要在报告说明"页面内容本身少"，不能默认为识别成功。
+档位倍率低于底稿原生分辨率：`careful` 按 2.6 倍渲染，而 `-r300` 底稿原生约 4.2 倍，等于降采样。正文页无碍，但**落款/签章页那种宽字距竖排职务栏容易整列漏字**——职务读出来了，姓名整列丢；调高 `--scale` 也未必捞得回，这类页 Tesseract `--psm 6` 往往更强。宁可在质检报告里标注人工核对结果，也不要手工往文字层塞字：那是转写，不是识别。
+
+4. 压缩（走过 Paddle 底稿路线后必做）。`-sDEVICE=pdfimage24` 底稿是无压缩位图，成果体积会涨 3–4 倍；用 pdfwrite 重编码压回去，文字层与页数无损：
+
+```bash
+gs -o "OCR成果/input_OCR.cmp.pdf" -sDEVICE=pdfwrite -dCompatibilityLevel=1.7 \
+  -dDownsampleColorImages=true -dColorImageResolution=200 -dColorImageDownsampleType=/Bicubic \
+  -dDownsampleGrayImages=true -dGrayImageResolution=200 -dGrayImageDownsampleType=/Bicubic \
+  -dAutoFilterColorImages=false -dColorImageFilter=/DCTEncode \
+  -dAutoFilterGrayImages=false -dGrayImageFilter=/DCTEncode \
+  -dJPEGQ=88 -dNOPAUSE -dBATCH -q "OCR成果/input_OCR.pdf"
+mv "OCR成果/input_OCR.cmp.pdf" "OCR成果/input_OCR.pdf"
+```
+
+200dpi/q88 与 300dpi 肉眼无差，实测一批 68 页案卷 123MB → 40MB。案卷要寄检察院、上传或邮件外发时这步别省；压完重跑第 5 步核对页数与文字量。
+
+5. 验收：重跑第 2 步命令即可——manifest 断点续跑不会重复 OCR，只从最终 PDF 刷新 md 副本、逐页文字量清单和结构检查。然后核对 `OCR过程文件/报告/` 下的 `OCR质量检查.md` 与 `page_text_manifest.csv`：页数一致、逐页文字量无异常，后几页、横页、签章页逐页核对。签章页文字少要在报告说明"页面内容本身少"，不能默认为识别成功。
+
+再查文字层码位——有些 OCR 产品输出的汉字落在康熙部首区（`⼈` `⺠` `⽉`），或把数字逐字符拆开（`2 0 2 1年1⽉4 ⽇`），人眼看着正常但检索全废：
+
+```bash
+python3 -c "
+import sys, re
+R=[(0x2E80,0x2EFF),(0x2F00,0x2FDF),(0xF900,0xFAFF),(0xFE30,0xFE4F)]
+t=open(sys.argv[1],encoding='utf-8').read()
+print('异体字符', sum(any(a<=ord(c)<=z for a,z in R) for c in t), '数字被拆', len(re.findall(r'\d \d', t)))
+" "OCR成果/input_OCR.md"
+```
+
+两项都应为 0。自己写检查时**按 `ord()` 判码位，别用字面量区间正则**——把兼容表意文字区写成 `豈-﫿` 会吞掉大片正常汉字，误报成灾。这条同样是判断一份旧 OCR 成果要不要重做的首选依据。
 
 ## 分流规则
 
 - 已有文字层：`skip-text` 保留，不重复 OCR。
 - 普通扫描页：OCRmyPDF/Tesseract，批量、省算力。
 - 核心证据、表格密集、横向/旋转、印章、低文本或乱码页：PaddleOCR（必须先做底稿）。
+- 落款/签章页（宽字距竖排职务栏）：Paddle 易整列漏姓名，Tesseract `--psm 6` 反而更稳；两者都不全时，以人工核对结果写进质检报告，不动文字层。
 - 只要文本/坐标、不需要可搜索 PDF：`scripts/paddleocr_extract.py`。
 
 ## 防止方向/文字层错位
@@ -71,6 +101,7 @@ mv "OCR成果/input_OCR.new.pdf" "OCR成果/input_OCR.pdf"                      
 ## 省算力与省 token
 
 - 先评估再跑，先抽样再全量；OCRmyPDF 达标就不上 PaddleOCR；PaddleOCR 只跑评估页码。
+- 例外：先抽查基础版的要害页（判项、案号、当事人姓名）。淡墨或细笔画扫描件上 Tesseract 常错得密集且正好错在这些位置，此时别死守评估页码，直接全页上 Paddle——错在要害处的代价远高于那点算力。
 - 尊重 manifest 和已有输出，不随意 `--overwrite`。
 - 法律分析用 `rg` 在 `OCR成果/*.md` 定向检索（关键词、人名、案号、金额），不把全文塞进对话。
 
