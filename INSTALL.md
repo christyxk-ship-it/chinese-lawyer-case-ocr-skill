@@ -6,11 +6,21 @@
 
 ```bash
 uname -s          # 期望 Darwin
-which brew        # 无输出则按第 1 步的"没有 Homebrew 时的人机分工"处理
 python3 --version # 推荐 3.10+；3.9 实测可用（Intel 老 Mac 自带 3.9.6 亦可跑通）；报版本相关错误时见第 1 步末尾的"Python 补救"
+
+# 先查四件 OCR 工具是否已经在（有些机器早先用别的方式装过，这类机器不需要 Homebrew）
+which ocrmypdf qpdf gs tesseract
+tesseract --list-langs 2>/dev/null | grep chi_sim
 ```
 
+分支判断：
+
+- 四件工具都有路径**且**含 `chi_sim` → **整个第 1 步跳过**，直接从第 2 步开始，不必检查也不必安装 Homebrew。
+- 缺任意一件 → 进入第 1 步；此时再 `which brew`，无输出就按第 1 步的"没有 Homebrew 时的人机分工"处理。
+
 ## 1. 命令行工具（OCR 主引擎）
+
+仅在第 0 步检出工具缺失时执行。
 
 ```bash
 brew install ocrmypdf qpdf ghostscript tesseract tesseract-lang
