@@ -129,7 +129,7 @@ ocrmypdf -l chi_sim+eng --force-ocr --deskew --rotate-pages --jobs 2 --optimize 
 对大批量报告附件，且速度比自动旋转/纠偏更重要时：
 
 ```bash
-ocrmypdf -l chi_sim+eng --skip-text --output-type pdf --jobs 4 --optimize 0 --tesseract-timeout 8 --tesseract-non-ocr-timeout 5 input.pdf output.pdf
+ocrmypdf -l chi_sim+eng --skip-text --output-type pdf --jobs 4 --optimize 0 --tesseract-timeout 30 --tesseract-non-ocr-timeout 5 input.pdf output.pdf
 ```
 
 对下载报告或网页抓取 PDF，如在元数据后处理阶段失败，先重建页面内容再 OCR：
@@ -147,7 +147,9 @@ ocrmypdf -l chi_sim+eng --skip-text --output-type pdf sanitized.pdf output.pdf
 
 - `--profile careful`：核心诉讼材料，保留纠偏/旋转和更干净输出。
 - `--profile fast --sanitize-input always`：大批量报告/证据附件，减少坏元数据失败，使用更快的 PDF 输出。
-- `--profile troubleshoot`：顽固 PDF，先清理输入，并允许更长单文件运行时间。
+- `--profile troubleshoot`：顽固 PDF，先清理输入，单线程跑，单文件上限 600 秒。
+
+超时策略：`fast`/`balanced`/`careful` 均不设文件级超时（大文件跑几十分钟属正常），防卡死靠单页上限——`fast` 30 秒、`troubleshoot` 30 秒、`balanced`/`careful` 不限。仅 `troubleshoot` 保留 600 秒文件上限。注意文件级超时一旦触发即全损：脚本会杀掉进程并删除半成品，重跑从第一页开始。
 
 `careful` 档位只有在本机存在 `unpaper` 时才自动启用 `--clean-final`。如果缺少 `unpaper`，不要让 OCR 因清理步骤失败而中断；首要目标仍然是生成可检索 PDF。只有用户明确要求更强清理效果时，才考虑安装 `unpaper` 后重跑。
 

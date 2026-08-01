@@ -128,8 +128,10 @@ def apply_profile_defaults(args: argparse.Namespace) -> None:
         args.jobs = args.jobs or 4
         args.optimize = 0 if args.optimize is None else args.optimize
         args.output_type = args.output_type or "pdf"
-        args.file_timeout = 240 if args.file_timeout is None else args.file_timeout
-        args.tesseract_timeout = args.tesseract_timeout or 8
+        # 不设文件级超时：几百页大部头跑几十分钟属正常，旧版 240 秒会跑到一半杀掉并丢弃全部成果。
+        # 防卡死交给下面的单页上限，护栏设在页级才分得清"卡住"和"就是大"。
+        args.file_timeout = 0 if args.file_timeout is None else args.file_timeout
+        args.tesseract_timeout = args.tesseract_timeout or 30
         args.tesseract_non_ocr_timeout = args.tesseract_non_ocr_timeout or 5
         args.no_deskew = True
         args.no_rotate_pages = True

@@ -33,6 +33,8 @@ python3 "$SKILL/scripts/ocr_case_pdfs.py" . --mode skip-text --profile fast --sa
 
 注意：`fast` 档不做自动旋转/纠偏。核心证据或正式交付件改用 `careful` 或 `balanced`；繁体材料 `--languages` 加 `chi_tra`。
 
+`fast` 档不设整本文件超时，几百页的大部头可放心跑（旧版 240 秒上限会把大文件跑到一半杀掉、并丢弃已完成的全部页）；防卡死由单页 30 秒上限负责。真需要限时用 `--file-timeout <秒>`，但要记得超时等于该文件全损、重跑从头开始。
+
 3. 疑难页增强（评估出 paddle 页时）。先生成方向正确、无旧文字层的底稿，再叠加，验收后替换基础版：
 
 ```bash
