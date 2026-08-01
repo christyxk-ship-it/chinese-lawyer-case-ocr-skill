@@ -139,7 +139,9 @@ def apply_profile_defaults(args: argparse.Namespace) -> None:
         args.jobs = args.jobs or 1
         args.optimize = 0 if args.optimize is None else args.optimize
         args.output_type = args.output_type or "pdf"
-        args.file_timeout = 600 if args.file_timeout is None else args.file_timeout
+        # 同样不设文件级超时：本档单线程跑、比 fast 慢数倍，旧版 600 秒反而是四档中最紧的限制，
+        # 与"给顽固文件更多时间"的本意相反。防卡死同样交给单页上限。
+        args.file_timeout = 0 if args.file_timeout is None else args.file_timeout
         args.tesseract_timeout = args.tesseract_timeout or 30
         args.tesseract_non_ocr_timeout = args.tesseract_non_ocr_timeout or 10
         if args.sanitize_input == "auto":
