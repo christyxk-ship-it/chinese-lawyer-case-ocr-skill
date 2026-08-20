@@ -119,6 +119,7 @@ python3 "$SKILL/scripts/paddle_searchable_pdf.py" --check-tools
 
 - 依赖细节、OCRmyPDF 参数、缓存与兜底策略：见 `chinese-lawyer-case-ocr-skill/references/install-and-fallbacks.md`。
 - PaddleOCR 首次运行报模型/网络错误：说明模型尚未缓存，允许联网重试一次即可。
+- OCRmyPDF 警告 `No installed font has glyphs for the detected 'chi_sim' text`：**不是 OCR 失败，不用重跑**。实测文字层照样可搜索、可复制、可被质检脚本读出，只是在阅读器里高亮那段文字时显示空白。macOS 不自带 Noto CJK；想让高亮正常显示就装 `brew install --cask font-noto-sans-cjk`，不装不影响交付件可检索。
 - 任何工具缺失时不要假装 OCR 成功——如实告知用户缺什么、装什么。
 
 ## 红线

@@ -114,10 +114,10 @@ python3 scripts/paddleocr_extract.py "/path/to/case-folder" --lang chinese_cht -
 ocrmypdf -l chi_sim+eng --skip-text --deskew --rotate-pages --jobs 2 --optimize 1 input.pdf output.pdf
 ```
 
-怀疑已有文字层损坏时：
+怀疑已有文字层损坏时（`--redo-ocr` 不能与 `--deskew` 同用，同时给会被 ocrmypdf 直接拒绝启动）：
 
 ```bash
-ocrmypdf -l chi_sim+eng --redo-ocr --deskew --rotate-pages --jobs 2 --optimize 1 input.pdf output.pdf
+ocrmypdf -l chi_sim+eng --redo-ocr --rotate-pages --jobs 2 --optimize 1 input.pdf output.pdf
 ```
 
 对顽固图片型扫描件，且用户可接受一定保真度取舍时：

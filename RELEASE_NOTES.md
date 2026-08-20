@@ -1,5 +1,12 @@
 # 发布说明
 
+## v0.3.4
+
+两条文档修正，脚本未改：
+
+- **`--redo-ocr` 示例命令一直跑不通**：references"怀疑已有文字层损坏时"给的是 `--redo-ocr --deskew ...`，而 ocrmypdf 禁止 `--redo-ocr` 与 `--deskew`／`--clean-final`／`--remove-background` 同用，照抄会在参数校验阶段直接报错、根本不开跑。查过 17.7.0 源码，该限制并非新版引入——这条示例自写下起就是无效的。已删去 `--deskew`，并在正文标明互斥关系。
+- **澄清 `No installed font has glyphs` 警告不是故障**：macOS 不自带 Noto CJK，缺字体时 OCRmyPDF 退回无字形字体并打印这条警告，容易被误判成 OCR 失败而重跑。实测（pypdf 与 pdfminer.six 双路复核）文字层内容完整、可搜索可复制、质检脚本读取正常，唯一影响是在阅读器里高亮该段文字时显示空白。INSTALL.md 故障排查新增该条，并给出想要正常高亮时的字体安装命令。
+
 ## v0.3.3
 
 批量 OCR 18 本数百页扫描教材时暴露的超时缺陷，把护栏从文件级下移到页级：
