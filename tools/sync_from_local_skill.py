@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Sync the local skill into this public GitHub package.
+"""Validate this repository skill or import an explicitly selected local copy.
 
-Local install and public package now share the machine name
-`chinese-lawyer-case-ocr-skill`. The frontmatter rewrite is kept as a guard so
-the published package keeps that name even if a local copy is renamed.
+The repository skill is the source of truth. Running without ``--source`` only
+validates it. Passing ``--source`` imports an independent copy; the frontmatter
+rewrite keeps the published machine name stable if that copy was renamed.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ AGENT_OPENAI_YAML = """interface:
   default_prompt: "使用 $chinese-lawyer-case-ocr-skill 对中文法律案卷 PDF 做 OCR：先评估分流，再用 OCRmyPDF/Tesseract 批量生成可检索 PDF；对核心、横向、低文本或疑难页面用 PaddleOCR 增强；最终只保留一份可搜索 PDF，并输出逐页文字层质检报告。"
 """
 
-DEFAULT_SOURCE = Path.home() / ".codex" / "skills" / "chinese-lawyer-case-ocr-skill"
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 PUBLISHED_SKILL_DIR = "chinese-lawyer-case-ocr-skill"
 SYNC_PATHS = [
@@ -41,8 +40,13 @@ IGNORE_NAMES = {"__pycache__", ".DS_Store"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sync the local skill into the public package.")
-    parser.add_argument("--source", default=str(DEFAULT_SOURCE), help="local source skill directory")
+    parser = argparse.ArgumentParser(
+        description="Validate the repository skill or import an explicitly selected local copy."
+    )
+    parser.add_argument(
+        "--source",
+        help="independent source skill directory to import; omit to validate the repository skill",
+    )
     parser.add_argument("--repo", default=str(DEFAULT_REPO), help="public release repository root")
     parser.add_argument("--commit", action="store_true", help="commit synced changes")
     parser.add_argument("--push", action="store_true", help="push committed changes to origin")
@@ -196,12 +200,28 @@ def commit_and_push(repo: Path, push: bool) -> None:
 
 def main() -> int:
     args = parse_args()
-    source = Path(args.source).expanduser().resolve()
     repo = Path(args.repo).expanduser().resolve()
     if args.push:
         args.commit = True
     if not (repo / ".git").exists():
         raise SystemExit(f"not a git repository: {repo}")
+
+    public_skill = (repo / PUBLISHED_SKILL_DIR).resolve()
+    if args.source is None:
+        if args.commit or args.push:
+            raise SystemExit("--commit/--push require an explicit independent --source")
+        if not args.no_validate:
+            validate(public_skill, repo)
+        print("Validated repository skill (current source of truth).")
+        return 0
+
+    source = Path(args.source).expanduser().resolve()
+    if not source.exists():
+        raise SystemExit(f"source skill not found: {source}")
+    if source == public_skill:
+        raise SystemExit(
+            "source resolves to the repository skill itself; edit it directly or choose an independent --source"
+        )
 
     require_clean_repo(repo, args.allow_dirty)
     if args.push and public_package_matches(source, repo):

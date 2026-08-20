@@ -62,13 +62,23 @@ tools/                           ← 维护者工具
 
 ## 维护同步（仓库维护者用）
 
-本机源 skill 位于 `~/.codex/skills/chinese-lawyer-case-ocr-skill`，与公开仓库同名（注意别和依赖环境目录 `~/.case-pdf-ocr/` 混淆，那是 venv 和 PaddleOCR 的安装位置）。不要整目录直接覆盖，用同步脚本：
+对仓库维护者，仓库中的 `chinese-lawyer-case-ocr-skill/` 是事实源，日常维护直接修改仓库副本；裸跑维护脚本只做校验。`INSTALL.md` 面向普通安装者，继续把 skill 复制到各宿主目录，不要求改成软链接。
 
 ```bash
-python3 tools/sync_from_local_skill.py            # 同步并校验
-python3 tools/sync_from_local_skill.py --commit --push
+python3 tools/sync_from_local_skill.py
+```
+
+只有维护者确需把另一份独立安装副本中的改动回灌仓库时，才显式指定来源；脚本拒绝把仓库事实源同时作为来源与目标：
+
+```bash
+python3 tools/sync_from_local_skill.py --source /绝对路径/另一份skill
+python3 tools/sync_from_local_skill.py --source /绝对路径/另一份skill --commit --push
 ```
 
 ## 许可
 
 MIT License，详见 `LICENSE`。欢迎大家反馈和建议，我会继续维护和迭代。
+
+## 进展日志
+
+- 2026-08-21 Codex 修复维护脚本的失效默认源：维护端以仓库副本为事实源，裸跑只校验；普通安装仍按 `INSTALL.md` 复制到宿主目录；独立安装副本回灌须显式传 `--source`，并增加同源同目标保护 → `tools/sync_from_local_skill.py`
