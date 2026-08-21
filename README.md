@@ -67,3 +67,4 @@ MIT License。
 - 2026-08-21 Codex 完成 pypdf 安全补丁与完整 Paddle 回归；产物：`requirements-base.txt`、`requirements-paddle.txt`、`RELEASE_NOTES.md`。
 - 2026-08-21 Claude 新增 OCR 产物回归测试，用固定样本拦截依赖升级导致的静默劣化；缺 OCR 工具时自动跳过。产物：`tests/test_ocr_regression.py`、`tests/fixtures/`。
 - 2026-08-21 Claude 处理 Dependabot 升级：pypdfium2 5.13.0 经本机回归后合入；numpy 2.5.2 因与 paddlex 的 `numpy<2.4` 冲突而关闭，并在 `requirements-paddle.txt` 标注该上限。
+- 2026-08-21 Claude 首次月度上游巡查：待办 PR/Issue 均为空。经 PyPI 核实 paddleocr/paddlepaddle/pypdf/pypdfium2 均为最新版，无需改动。ocrmypdf/tesseract/ghostscript 不是 pip 包、仓库不锁版本，经 Homebrew 与 GitHub 安全公告核实：两条 Tesseract 漏洞（GHSA-7j76-5rq5-5jg8、GHSA-x3vq-7rr7-5x3h，均已在 5.5.3 修复）须靠伪造 `.traineddata` 模型文件触发，OCRmyPDF 一条（GHSA-jr24-5gpp-fwx7，已在 17.10.0 修复）只影响未使用的 `watcher.py` 热文件夹功能，均不影响本 skill 实际用法；Homebrew 当前稳定版已是修复版本，新装用户不受影响，故无仓库改动。扫过一轮新上游 OCR 项目，本月新增关注度集中在生成式视觉大模型（Surya、dots.ocr、PaddleOCR-VL 等），按本 skill 防幻觉原则一律排除；未发现符合"完全本地、非生成式、许可证允许商用"且优于现有方案的新项目。
