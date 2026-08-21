@@ -64,3 +64,4 @@ MIT License。
 
 - 2026-08-21 Codex 修复维护脚本的同源风险并发布 `3fed354`。
 - 2026-08-21 Codex 完成 v0.4.0 安全与简洁化改造并通过本地回归；产物：`chinese-lawyer-case-ocr-skill/`、`install.sh`、`tests/`。
+- 2026-08-21 Codex 完成 pypdf 安全补丁与完整 Paddle 回归；产物：`requirements-base.txt`、`requirements-paddle.txt`、`RELEASE_NOTES.md`。
