@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import os
-import re
 import sys
 from pathlib import Path
 from statistics import mean
@@ -40,33 +38,15 @@ try:
     from pypdf import PdfReader  # noqa: E402
 except ImportError as exc:
     raise SystemExit(
-        f"缺少 Python 依赖：{exc.name}。请按 INSTALL.md 创建环境：\n"
-        "  python3 -m venv ~/.case-pdf-ocr/venv\n"
-        "  ~/.case-pdf-ocr/venv/bin/pip install numpy pypdf pypdfium2 pillow reportlab\n"
-        "或设置环境变量 CASE_OCR_PYTHON 指向已装齐依赖的 Python。"
+        f"缺少 Python 依赖：{exc.name}。请按 INSTALL.md 运行安装器，"
+        "或设置 CASE_OCR_PYTHON 指向已安装锁定依赖的 Python。"
     )
-
-
-FIELDS = [
-    "pdf",
-    "page",
-    "pages",
-    "decision",
-    "reason",
-    "text_chars",
-    "width",
-    "height",
-    "rotation",
-    "dark_density",
-    "line_bands",
-    "column_bands",
-]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Assess OCR route per PDF page.")
     parser.add_argument("paths", nargs="+", help="PDF files or folders")
-    parser.add_argument("--output-dir", help="assessment output directory")
+    parser.add_argument("--output", help="optional Markdown report path; default prints only")
     parser.add_argument("--no-recursive", action="store_true")
     parser.add_argument("--max-files", type=int)
     parser.add_argument("--max-pages", type=int)
@@ -75,7 +55,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-line-threshold", type=int, default=55)
     parser.add_argument("--dense-column-threshold", type=int, default=45)
     parser.add_argument("--dark-density-threshold", type=float, default=0.07)
-    return parser.parse_args()
+    args = parser.parse_args()
+    for name in ("max_files", "max_pages"):
+        value = getattr(args, name)
+        if value is not None and value <= 0:
+            parser.error(f"--{name.replace('_', '-')} must be greater than 0")
+    if args.render_scale <= 0:
+        parser.error("--render-scale must be greater than 0")
+    return args
 
 
 def find_pdfs(paths: list[str], recursive: bool) -> list[Path]:
@@ -85,8 +72,8 @@ def find_pdfs(paths: list[str], recursive: bool) -> list[Path]:
         if path.is_file() and path.suffix.lower() == ".pdf":
             pdfs.append(path)
         elif path.is_dir():
-            iterator = path.rglob("*.pdf") if recursive else path.glob("*.pdf")
-            pdfs.extend(p.resolve() for p in iterator if p.is_file())
+            iterator = path.rglob("*") if recursive else path.glob("*")
+            pdfs.extend(p.resolve() for p in iterator if p.is_file() and p.suffix.lower() == ".pdf")
     return sorted(dict.fromkeys(pdfs))
 
 
@@ -106,10 +93,6 @@ def common_root(paths: list[str], pdfs: list[Path]) -> Path:
     if not roots and pdfs:
         roots.append(str(pdfs[0].parent))
     return Path(os.path.commonpath(roots)).resolve()
-
-
-def safe_name(pdf: Path) -> str:
-    return re.sub(r"[\\/:*?\"<>|\s]+", "_", pdf.stem).strip("_") or "pdf"
 
 
 def page_text_chars(page: object) -> int:
@@ -221,14 +204,7 @@ def assess_pdf(pdf: Path, args: argparse.Namespace) -> list[dict[str, str]]:
     return rows
 
 
-def write_report(report_dir: Path, rows: list[dict[str, str]]) -> None:
-    report_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = report_dir / "ocr_strategy.csv"
-    with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
-
+def build_report(rows: list[dict[str, str]]) -> str:
     by_pdf: dict[str, list[dict[str, str]]] = {}
     for row in rows:
         by_pdf.setdefault(row["pdf"], []).append(row)
@@ -240,9 +216,6 @@ def write_report(report_dir: Path, rows: list[dict[str, str]]) -> None:
         densities = [float(r["dark_density"]) for r in pdf_rows if r["dark_density"]]
         bands = [int(r["line_bands"]) for r in pdf_rows if r["line_bands"]]
         column_bands = [int(r["column_bands"]) for r in pdf_rows if r["column_bands"]]
-        name = safe_name(Path(pdf))
-        (report_dir / f"{name}.paddle_pages.txt").write_text(range_string(paddle_pages) + "\n", encoding="utf-8")
-        (report_dir / f"{name}.ocrmypdf_pages.txt").write_text(range_string(ocrmypdf_pages) + "\n", encoding="utf-8")
         lines.extend(
             [
                 f"## {pdf}",
@@ -254,11 +227,11 @@ def write_report(report_dir: Path, rows: list[dict[str, str]]) -> None:
                 f"- 平均行带数：{mean(bands):.1f}" if bands else "- 平均行带数：无",
                 f"- 平均列带数：{mean(column_bands):.1f}" if column_bands else "- 平均列带数：无",
                 "",
-                "建议：先并行跑 OCRmyPDF 基础版和 PaddleOCR 建议页；基础版完成后，如需混合成品，再用 `paddle_searchable_pdf.py --base-pdf` 输出最终增强版。",
+                "建议：先跑 OCRmyPDF；只有要害页效果不足时，再把上面的 PaddleOCR 页码传给 `paddle_searchable_pdf.py --pages`。",
                 "",
             ]
         )
-    (report_dir / "ocr_strategy.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def main() -> int:
@@ -267,19 +240,24 @@ def main() -> int:
     if args.max_files:
         pdfs = pdfs[: args.max_files]
     if not pdfs:
-        print("No PDF files found.", file=sys.stderr)
+        print("没有找到 PDF。", file=sys.stderr)
         return 2
     root = common_root(args.paths, pdfs)
-    excluded_roots = (root / "OCR成果", root / "OCR过程文件")
-    pdfs = [p for p in pdfs if not any(is_under(p, excluded) for excluded in excluded_roots)]
-    report_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR过程文件" / "报告"
+    pdfs = [p for p in pdfs if not is_under(p, root / "OCR成果") and not p.name.endswith("_OCR.pdf")]
+    if not pdfs:
+        print("没有找到需要评估的原始 PDF。", file=sys.stderr)
+        return 2
     rows: list[dict[str, str]] = []
     for pdf in pdfs:
         print(f"评估 {pdf}", flush=True)
         rows.extend(assess_pdf(pdf, args))
-    write_report(report_dir, rows)
-    print(f"Strategy CSV: {report_dir / 'ocr_strategy.csv'}")
-    print(f"Strategy report: {report_dir / 'ocr_strategy.md'}")
+    report = build_report(rows)
+    print(report, end="")
+    if args.output:
+        output = Path(args.output).expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report, encoding="utf-8")
+        print(f"报告：{output}")
     return 0
 
 

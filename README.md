@@ -1,84 +1,66 @@
-# 中文律师案卷 OCR 技能包
+# 中文律师案卷 OCR
 
-把扫描件、图片型的中文法律案卷 PDF，在**你自己的电脑上**转成**可搜索、可复制文字**的 PDF，并附带一份同名 Markdown 文本副本。
+在 Mac 本机把扫描 PDF 转成可搜索 PDF，同时生成逐页 Markdown 和一份质检报告。原件不改，案卷不上传。
 
-给你的 AI 助手（WorkBuddy、ChatGPT Work、Claude Code 等）装上这个技能包，之后只要说一句"帮我 OCR 这个案卷文件夹"，剩下的它自己完成。
+## 特点
 
-## 为什么律师需要它
+- OCRmyPDF/Tesseract 批量处理，疑难页可选 PaddleOCR。
+- 不使用生成式视觉模型；OCR 仍可能错字或漏字，法律要素必须人工复核。
+- 案卷目录只保留一个 `OCR成果/`，不生成过程文件夹。
+- 安装时明确选择宿主，已有 Skill 先备份，失败自动恢复。
 
-- **为诉讼律师而做，刑辩尤其适配**：刑事、民商事案卷通吃。刑事阅卷拿到的往往是光盘里成百上千页的图片型扫描卷，无法检索、无法复制——批量转成可检索 PDF 后，讯问笔录、证据、人名、金额一搜即达；加上全程本地不出电脑，正好匹配刑事卷宗更高的保密要求。
-- **保密：全程本地处理，绝不上传**：案卷不出电脑，没有云端 OCR 的保密风险。
-- **人机共读：交付的是可检索 PDF和MD文件**，可检索PDF：满足律师阅卷习惯，轻松批注、摘要；同时MD文件给Agent阅读，辅助生成办案文件。
-- **杜绝AI幻觉**：不使用视觉大模型，避免AI幻觉。
-- **省算力省token的分流设计**：先逐页评估，普通页用OCRmyPDF/Tesseract快速跑，疑难页（表格、横页、低质量扫描）用PaddleOCR增强跑。
+## 系统
 
-## 系统要求(仅限Mac)
+- macOS、Python 3.12 或 3.13、Homebrew。
+- Apple 芯片支持完整路线。
+- Intel Mac 支持 OCRmyPDF 基础路线；PaddlePaddle 当前已停止官方 x86_64 支持。
+- 首次安装依赖及首次使用 PaddleOCR 下载模型时需要联网；模型就绪后可离线处理。
 
-- macOS，以 Apple 芯片为主；Intel 芯片实测可用，但首次安装排错较多，建议全程交给 AI 助手（Agent）处理
-- 一个能执行本地命令的 AI 助手：WorkBuddy / Codex / Claude Code 任选
-- 首次安装需联网（下载 OCR 引擎和模型，之后完全离线可用）
-- 首次安装需要 Homebrew（Mac 安装专业工具的标准渠道）；没装也没关系，AI 会引导你完成，期间需要你亲手输入一次开机密码
+## 安装
 
-## 安装（一步，不需要懂技术）
+把下面这句话交给能执行本地命令的 Codex、WorkBuddy 或 Claude Code：
 
-将以下提示词复制发给你的Agent（ChatGPT，Claude，WorkBuddy，Hermes）即可：
+> 下载 https://github.com/christyxk-ship-it/chinese-lawyer-case-ocr-skill ，阅读 INSTALL.md，并只安装到你自己的宿主目录，完成两项自检后报告结果。
 
-**安装本Skill并适配，下载链接：https://github.com/christyxk-ship-it/chinese-lawyer-case-ocr-skill （AI 助手看这里：请克隆或下载本仓库，阅读 `INSTALL.md` 并严格按步骤安装、自检，完成后向用户报告结果。）**
+安装器示例：
 
-## 怎么用
+```bash
+./install.sh --target codex
+```
 
-打开案卷 PDF 所在文件夹，对你的 AI 说：
+可选目标：`codex`、`workbuddy`、`claude`；需要多个宿主时重复写 `--target`。
 
-> 用 chinese-lawyer-case-ocr-skill 对 <案卷文件夹路径> 做 OCR。
+## 使用
 
-完成后得到：
+对 Agent 说：
+
+> 用 chinese-lawyer-case-ocr-skill 处理这个案卷文件夹。
+
+得到：
 
 ```text
 案卷文件夹/
-├── OCR成果/
-│   ├── 某某卷宗_OCR.pdf   ← 可搜索 PDF（唯一最终交付件）
-│   └── 某某卷宗_OCR.md    ← 逐页文本副本（全文检索、引用摘录用）
-└── OCR过程文件/
-    ├── 报告/               ← 评估、清单、质检报告、日志
-    ├── 底稿/               ← 方向/水印修正的无文字层底稿
-    ├── 转写/               ← 高精度引擎的逐页转写与坐标
-    └── 缓存/               ← 仅全局缓存不可用时使用
+└── OCR成果/
+    ├── 某卷_OCR.pdf
+    ├── 某卷_OCR.md
+    └── OCR质检报告.md
 ```
 
-## 常见问题
+命令退出码非零、报告存在失败项或要害页文字异常时，不得认定完成。
 
-- **文件会被上传吗？** 不会。OCR 引擎（OCRmyPDF/Tesseract、PaddleOCR）全部跑在本机，"未经授权不上传案卷"是本技能包写死的红线。
-- **首次运行为什么要联网？** 只为下载一次 OCR 模型（保存在本机全局缓存），之后离线可用。
-- **识别不准的页怎么办？** 看 `OCR过程文件/报告/OCR质量检查.md`，低文本页会被列出来供人工核对；手写和印章内容建议始终以原图为准。
+## 维护
 
-## 目录结构
-
-```text
-chinese-lawyer-case-ocr-skill/   ← skill 本体（SKILL.md + 脚本 + 参考文档）
-INSTALL.md                       ← 给 AI 助手看的安装说明
-install.sh                       ← 一键安装脚本（可选）
-tools/                           ← 维护者工具
-```
-
-## 维护同步（仓库维护者用）
-
-对仓库维护者，仓库中的 `chinese-lawyer-case-ocr-skill/` 是事实源，日常维护直接修改仓库副本；裸跑维护脚本只做校验。`INSTALL.md` 面向普通安装者，继续把 skill 复制到各宿主目录，不要求改成软链接。
+仓库中的 `chinese-lawyer-case-ocr-skill/` 是事实源：
 
 ```bash
 python3 tools/sync_from_local_skill.py
 ```
 
-只有维护者确需把另一份独立安装副本中的改动回灌仓库时，才显式指定来源；脚本拒绝把仓库事实源同时作为来源与目标：
+从另一份独立副本回灌时才使用 `--source`；提交和推送仍须显式加 `--commit --push`。
 
-```bash
-python3 tools/sync_from_local_skill.py --source /绝对路径/另一份skill
-python3 tools/sync_from_local_skill.py --source /绝对路径/另一份skill --commit --push
-```
-
-## 许可
-
-MIT License，详见 `LICENSE`。欢迎大家反馈和建议，我会继续维护和迭代。
+MIT License。
 
 ## 进展日志
 
-- 2026-08-21 Codex 修复维护脚本的失效默认源：维护端以仓库副本为事实源，裸跑只校验；普通安装仍按 `INSTALL.md` 复制到宿主目录；独立安装副本回灌须显式传 `--source`，并增加同源同目标保护 → `tools/sync_from_local_skill.py`
+- 2026-08-21 Codex 修复维护脚本的同源风险并发布 `3fed354`。
+- 2026-08-21 Codex 完成 v0.4.0 安全与简洁化改造并通过本地回归；产物：`chinese-lawyer-case-ocr-skill/`、`install.sh`、`tests/`。

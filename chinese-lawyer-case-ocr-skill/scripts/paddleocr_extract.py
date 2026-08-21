@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Extract OCR text and structure from case PDFs/images with PaddleOCR.
-
-This is an enhancement route for difficult Chinese legal materials. It writes
-sidecar text and JSON/coordinate results, but it does not create searchable PDFs.
-"""
+"""Extract local PaddleOCR text and JSON sidecars into OCR成果."""
 
 from __future__ import annotations
 
 import argparse
-import csv
+import importlib.metadata
 import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
-from typing import Iterable, Any
+from typing import Any, Iterable
 
 
-# PaddleOCR 环境探测顺序：环境变量 CASE_OCR_PADDLE_ROOT > 标准安装位置 > 本机既有位置
+INPUT_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+
+
 def find_paddle_root() -> Path | None:
     explicit = os.environ.get("CASE_OCR_PADDLE_ROOT")
     candidates = ([Path(explicit).expanduser()] if explicit else []) + [
@@ -30,119 +30,60 @@ def find_paddle_root() -> Path | None:
     return None
 
 
-DEFAULT_TOOL_ROOT = find_paddle_root()
-DEFAULT_PADDLEOCR_PYTHON = DEFAULT_TOOL_ROOT / "bin/python" if DEFAULT_TOOL_ROOT else None
-SOURCE_CACHE = DEFAULT_TOOL_ROOT / "cache" if DEFAULT_TOOL_ROOT else None
-DEFAULT_CACHE_DIR = Path.cwd() / "OCR过程文件" / "缓存"
-
-INPUT_SUFFIXES = {
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".tif",
-    ".tiff",
-    ".bmp",
-    ".webp",
-}
-
-MANIFEST_FIELDS = [
-    "source",
-    "status",
-    "results",
-    "text_chars",
-    "json",
-    "text",
-    "log",
-    "seconds",
-    "note",
-]
-
-
-def preparse_cache_dir(argv: list[str]) -> str | None:
-    for index, arg in enumerate(argv):
-        if arg == "--cache-dir" and index + 1 < len(argv):
-            return argv[index + 1]
-        if arg.startswith("--cache-dir="):
-            return arg.split("=", 1)[1]
-    return None
+PADDLE_ROOT = find_paddle_root()
+PADDLE_PYTHON = PADDLE_ROOT / "bin/python" if PADDLE_ROOT else None
+SOURCE_CACHE = PADDLE_ROOT / "cache" if PADDLE_ROOT else None
 
 
 def resolve_cache_dir(explicit: str | None) -> Path:
-    # 未显式指定且全局缓存可写时直接使用，模型只下载/保存一份，不逐案卷复制
     if explicit:
         return Path(explicit).expanduser().resolve()
     if SOURCE_CACHE is not None and os.access(SOURCE_CACHE.parent, os.W_OK):
         return SOURCE_CACHE.resolve()
-    return DEFAULT_CACHE_DIR.resolve()
+    return (Path.home() / ".case-pdf-ocr/cache").resolve()
 
 
-def maybe_reexec_with_paddle_python() -> None:
+def maybe_reexec(cache_dir: Path) -> None:
     if os.environ.get("CASE_PDF_OCR_PADDLE_REEXEC"):
         return
-    if DEFAULT_PADDLEOCR_PYTHON is None or not DEFAULT_PADDLEOCR_PYTHON.exists():
-        return
-    if Path(sys.prefix).resolve() == DEFAULT_TOOL_ROOT.resolve():
+    if PADDLE_PYTHON is None or not PADDLE_PYTHON.exists() or Path(sys.prefix).resolve() == PADDLE_ROOT:
         return
     env = os.environ.copy()
     env["CASE_PDF_OCR_PADDLE_REEXEC"] = "1"
-    env.setdefault("PADDLE_PDX_CACHE_HOME", str(resolve_cache_dir(preparse_cache_dir(sys.argv[1:]))))
-    os.execve(str(DEFAULT_PADDLEOCR_PYTHON), [str(DEFAULT_PADDLEOCR_PYTHON), __file__, *sys.argv[1:]], env)
+    env["PADDLE_PDX_CACHE_HOME"] = str(cache_dir)
+    env.pop("PYTHONPATH", None)
+    os.execve(str(PADDLE_PYTHON), [str(PADDLE_PYTHON), __file__, *sys.argv[1:]], env)
 
 
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(resolve_cache_dir(preparse_cache_dir(sys.argv[1:]))))
-maybe_reexec_with_paddle_python()
-
-
-def load_paddleocr():
+def package_version(name: str) -> str | None:
     try:
-        from paddleocr import PaddleOCR
-
-        return PaddleOCR
-    except Exception as exc:
-        raise SystemExit(
-            f"PaddleOCR 不可用（{exc}）。请按 INSTALL.md 创建环境：\n"
-            "  python3 -m venv ~/.case-pdf-ocr/paddle\n"
-            "  ~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab\n"
-            "或设置环境变量 CASE_OCR_PADDLE_ROOT 指向已装好 paddleocr 的虚拟环境目录。"
-        )
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
 
 
-def json_default(value: Any) -> Any:
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    if hasattr(value, "item"):
-        return value.item()
-    return str(value)
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Extract OCR text/JSON with PaddleOCR for difficult case materials.",
-    )
-    parser.add_argument("paths", nargs="*", help="PDF/image files or folders to process")
-    parser.add_argument("--lang", default="ch", help="PaddleOCR language, e.g. ch, chinese_cht, en")
-    parser.add_argument(
-        "--ocr-version",
-        default="PP-OCRv6",
-        choices=("PP-OCRv3", "PP-OCRv4", "PP-OCRv5", "PP-OCRv6"),
-        help="PaddleOCR model family",
-    )
-    parser.add_argument("--output-dir", help="Directory for text sidecars")
-    parser.add_argument("--json-dir", help="Directory for PaddleOCR JSON results")
-    parser.add_argument("--report-dir", help="Directory for manifest and QA report")
-    parser.add_argument("--cache-dir", help="PaddleX/PaddleOCR cache directory; default reuses the source cache when available")
-    parser.add_argument("--max-files", type=int, help="Process only the first N files")
-    parser.add_argument("--no-recursive", action="store_true", help="Do not recurse folders")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs")
-    parser.add_argument("--no-resume", action="store_true", help="Do not skip prior ok rows")
-    parser.add_argument("--use-doc-orientation-classify", action="store_true", help="Enable document orientation classification")
-    parser.add_argument("--use-doc-unwarping", action="store_true", help="Enable document unwarping")
-    parser.add_argument("--use-textline-orientation", action="store_true", help="Enable textline orientation classification")
-    parser.add_argument("--return-word-box", action="store_true", help="Return word boxes when supported")
-    parser.add_argument("--text-rec-score-thresh", type=float, help="Drop recognition results below this score")
-    parser.add_argument("--check-tools", action="store_true", help="Print PaddleOCR dependency status and exit")
-    return parser.parse_args()
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Extract PaddleOCR text and JSON into OCR成果.")
+    parser.add_argument("paths", nargs="*")
+    parser.add_argument("--lang", default="ch")
+    parser.add_argument("--ocr-version", default="PP-OCRv6", choices=("PP-OCRv3", "PP-OCRv4", "PP-OCRv5", "PP-OCRv6"))
+    parser.add_argument("--output-dir", help="default: <input root>/OCR成果")
+    parser.add_argument("--cache-dir")
+    parser.add_argument("--max-files", type=int)
+    parser.add_argument("--no-recursive", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--use-doc-orientation-classify", action="store_true")
+    parser.add_argument("--use-doc-unwarping", action="store_true")
+    parser.add_argument("--use-textline-orientation", action="store_true")
+    parser.add_argument("--return-word-box", action="store_true")
+    parser.add_argument("--text-rec-score-thresh", type=float)
+    parser.add_argument("--check-tools", action="store_true")
+    args = parser.parse_args(argv)
+    if args.max_files is not None and args.max_files <= 0:
+        parser.error("--max-files must be greater than 0")
+    if args.text_rec_score_thresh is not None and not 0 <= args.text_rec_score_thresh <= 1:
+        parser.error("--text-rec-score-thresh must be between 0 and 1")
+    return args
 
 
 def find_inputs(paths: Iterable[str], recursive: bool) -> list[Path]:
@@ -157,82 +98,73 @@ def find_inputs(paths: Iterable[str], recursive: bool) -> list[Path]:
     return sorted(dict.fromkeys(files))
 
 
-def common_root(paths: list[str], files: list[Path]) -> Path:
-    roots: list[str] = []
+def common_root(paths: list[str]) -> Path:
+    roots = []
     for raw in paths:
         path = Path(raw).expanduser().resolve()
         roots.append(str(path if path.is_dir() else path.parent))
-    if not roots and files:
-        roots = [str(files[0].parent)]
-    if not roots:
-        return Path.cwd().resolve()
     return Path(os.path.commonpath(roots)).resolve()
 
 
-def default_dirs(root: Path, args: argparse.Namespace) -> tuple[Path, Path, Path]:
-    process_dir = root / "OCR过程文件"
-    text_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else process_dir / "转写"
-    json_dir = Path(args.json_dir).expanduser().resolve() if args.json_dir else process_dir / "转写"
-    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else process_dir / "报告"
-    return text_dir, json_dir, report_dir
+def is_under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def output_paths(source: Path, root: Path, output_dir: Path) -> tuple[Path, Path]:
+    try:
+        relative = source.relative_to(root)
+    except ValueError:
+        relative = Path(source.name)
+    base = output_dir / relative
+    return base.with_name(f"{base.stem}_Paddle.txt"), base.with_name(f"{base.stem}_Paddle.json")
 
 
 def ensure_cache(cache_dir: Path) -> None:
-    if SOURCE_CACHE is None or cache_dir == SOURCE_CACHE.resolve():
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    if SOURCE_CACHE is None or not SOURCE_CACHE.exists() or cache_dir == SOURCE_CACHE.resolve():
         return
-    (cache_dir / "official_models").mkdir(parents=True, exist_ok=True)
-    source_models = SOURCE_CACHE / "official_models"
+    destination = cache_dir / "official_models"
+    destination.mkdir(parents=True, exist_ok=True)
     for model in ("PP-OCRv6_medium_det", "PP-OCRv6_medium_rec"):
-        src = source_models / model
-        dst = cache_dir / "official_models" / model
-        if src.exists() and not dst.exists():
-            import shutil
-
-            shutil.copytree(src, dst)
+        source = SOURCE_CACHE / "official_models" / model
+        target = destination / model
+        if source.exists() and not target.exists():
+            shutil.copytree(source, target)
 
 
-def should_exclude(path: Path, text_dir: Path, json_dir: Path, report_dir: Path, process_dir: Path) -> bool:
-    for root in (process_dir.resolve(), text_dir.resolve(), json_dir.resolve(), report_dir.resolve()):
-        try:
-            path.relative_to(root)
-            return True
-        except ValueError:
-            pass
-    return path.name.endswith("_OCR.pdf")
+def print_status(cache_dir: Path) -> bool:
+    print(f"python: {sys.executable}")
+    print(f"cache: {cache_dir}")
+    versions = {name: package_version(name) for name in ("paddlepaddle", "paddleocr")}
+    for name, version in versions.items():
+        print(f"{name}: {version or 'MISSING'}")
+    return all(versions.values())
 
 
-def sidecar_paths(src: Path, root: Path, text_dir: Path, json_dir: Path) -> tuple[Path, Path]:
-    try:
-        rel = src.relative_to(root)
-    except ValueError:
-        rel = Path(src.name)
-    txt = (text_dir / rel).with_suffix(".txt")
-    js = (json_dir / rel).with_suffix(".json")
-    return txt, js
+def build_ocr(args: argparse.Namespace):
+    from paddleocr import PaddleOCR
+
+    return PaddleOCR(
+        lang=args.lang,
+        ocr_version=args.ocr_version,
+        use_doc_orientation_classify=args.use_doc_orientation_classify,
+        use_doc_unwarping=args.use_doc_unwarping,
+        use_textline_orientation=args.use_textline_orientation,
+        text_rec_score_thresh=args.text_rec_score_thresh,
+        return_word_box=args.return_word_box,
+    )
 
 
-def read_manifest(report_dir: Path) -> dict[str, dict[str, str]]:
-    path = report_dir / "paddleocr_manifest.csv"
-    if not path.exists():
-        return {}
-    with path.open(encoding="utf-8-sig") as handle:
-        return {row["source"]: row for row in csv.DictReader(handle)}
-
-
-def write_manifest(report_dir: Path, rows: list[dict[str, str]]) -> None:
-    report_dir.mkdir(parents=True, exist_ok=True)
-    with (report_dir / "paddleocr_manifest.csv").open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=MANIFEST_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
-    failures = [row for row in rows if row["status"] != "ok"]
-    failed_path = report_dir / "failed_paddleocr_files.txt"
-    if failures:
-        with failed_path.open("w", encoding="utf-8") as handle:
-            for row in failures:
-                handle.write(f"{row['status']}\t{row['source']}\t{row['note']}\n")
-    elif failed_path.exists():
-        failed_path.unlink()
+def json_default(value: Any) -> Any:
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    if hasattr(value, "item"):
+        return value.item()
+    return str(value)
 
 
 def result_to_json(result: Any) -> Any:
@@ -246,156 +178,103 @@ def result_to_json(result: Any) -> Any:
 def extract_texts(result_jsons: list[Any]) -> list[str]:
     parts: list[str] = []
     for fallback_index, item in enumerate(result_jsons, start=1):
-        res = item.get("res", item) if isinstance(item, dict) else {}
-        page_index = res.get("page_index")
-        if page_index is None:
-            page_label = str(fallback_index)
-        else:
-            page_label = str(int(page_index) + 1)
-        texts = res.get("rec_texts") or []
+        result = item.get("res", item) if isinstance(item, dict) else {}
+        page_index = result.get("page_index")
+        page_label = str(fallback_index if page_index is None else int(page_index) + 1)
+        texts = result.get("rec_texts") or []
         if texts:
-            parts.append(f"===== Result {page_label} =====")
+            parts.append(f"===== 第 {page_label} 页 =====")
             parts.extend(str(text) for text in texts)
     return parts
 
 
-def write_quality_report(report_dir: Path, rows: list[dict[str, str]]) -> None:
-    status_counts: dict[str, int] = {}
-    for row in rows:
-        status_counts[row["status"]] = status_counts.get(row["status"], 0) + 1
-    low_text = [
-        row
-        for row in rows
-        if row["status"] == "ok" and row.get("text_chars", "0").isdigit() and int(row["text_chars"]) < 20
-    ]
-    failures = [row for row in rows if row["status"] != "ok"]
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f".{path.name}.", dir=path.parent, delete=False) as handle:
+        handle.write(text)
+        temporary = Path(handle.name)
+    temporary.replace(path)
+
+
+def quality_report(rows: list[dict[str, str]]) -> str:
+    failures = [row for row in rows if row["status"] == "failed"]
+    low = [row for row in rows if row["status"] == "ok" and int(row["chars"]) < 20]
     lines = [
-        "# PaddleOCR质量检查",
+        "# PaddleOCR质检报告",
         "",
-        f"- 清单文件数：{len(rows)}",
-        "- 状态统计：" + ", ".join(f"{key}={value}" for key, value in sorted(status_counts.items())),
-        f"- 低文本输出：{len(low_text)}",
+        f"- 文件：{len(rows)}",
         f"- 失败：{len(failures)}",
-        "- 说明：PaddleOCR增强路线只生成文本和JSON结构，不生成可检索PDF。",
+        f"- 低文本：{len(low)}",
+        "- 该路线只生成文本和 JSON，不替代最终可搜索 PDF。",
+        "",
     ]
-    if failures:
-        lines.extend(["", "## 失败清单", ""])
-        lines.extend(f"- {row['status']}: {row['source']} {row['note']}".rstrip() for row in failures[:100])
-    if low_text:
-        lines.extend(["", "## 低文本清单", ""])
-        lines.extend(f"- {row['source']}" for row in low_text[:100])
-    (report_dir / "PaddleOCR质量检查.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    lines.extend(f"- {row['status']}：{row['source']}；{row['note']}".rstrip("；") for row in rows)
+    return "\n".join(lines).rstrip() + "\n"
 
 
-def build_ocr(args: argparse.Namespace):
-    PaddleOCR = load_paddleocr()
-    return PaddleOCR(
-        lang=args.lang,
-        ocr_version=args.ocr_version,
-        use_doc_orientation_classify=args.use_doc_orientation_classify,
-        use_doc_unwarping=args.use_doc_unwarping,
-        use_textline_orientation=args.use_textline_orientation,
-        text_rec_score_thresh=args.text_rec_score_thresh,
-        return_word_box=args.return_word_box,
-    )
-
-
-def print_tool_status(args: argparse.Namespace) -> None:
-    print(f"python: {sys.executable}")
-    print(f"cache: {os.environ.get('PADDLE_PDX_CACHE_HOME')}")
-    try:
-        import paddle
-        import paddleocr
-
-        print(f"paddle: {paddle.__version__}")
-        print(f"paddleocr: {getattr(paddleocr, '__version__', 'unknown')}")
-    except Exception as exc:
-        print(f"paddleocr import: failed ({exc})")
-
-
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     cache_dir = resolve_cache_dir(args.cache_dir)
     os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_dir)
+    maybe_reexec(cache_dir)
     if args.check_tools:
-        print_tool_status(args)
-        return 0
+        return 0 if print_status(cache_dir) else 2
     if not args.paths:
-        print("Provide at least one PDF/image file or folder, or use --check-tools.", file=sys.stderr)
+        print("请提供 PDF、图片或文件夹，或使用 --check-tools。", file=sys.stderr)
+        return 2
+    missing_packages = [name for name in ("paddlepaddle", "paddleocr") if package_version(name) is None]
+    if missing_packages:
+        print("缺少 PaddleOCR 依赖：" + ", ".join(missing_packages), file=sys.stderr)
         return 2
 
     files = find_inputs(args.paths, recursive=not args.no_recursive)
+    if not files:
+        print("没有找到可识别文件；未创建任何成果。", file=sys.stderr)
+        return 2
+    root = common_root(args.paths)
+    if root == Path("/") and not args.output_dir:
+        print("输入跨越多个顶层目录；请显式指定 --output-dir。", file=sys.stderr)
+        return 2
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "OCR成果"
+    files = [path for path in files if not is_under(path, output_dir) and not path.name.endswith("_OCR.pdf")]
     if args.max_files:
         files = files[: args.max_files]
-    root = common_root(args.paths, files)
-    text_dir, json_dir, report_dir = default_dirs(root, args)
-    process_dir = root / "OCR过程文件"
-    files = [p for p in files if not should_exclude(p, text_dir, json_dir, report_dir, process_dir)]
+    if not files:
+        print("没有找到需要处理的原始文件；未创建任何成果。", file=sys.stderr)
+        return 2
+
     ensure_cache(cache_dir)
-
-    existing_rows = read_manifest(report_dir) if not args.no_resume else {}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    engine = build_ocr(args)
     rows: list[dict[str, str]] = []
-    ocr = None
-    for index, src in enumerate(files, start=1):
-        txt_path, json_path = sidecar_paths(src, root, text_dir, json_dir)
-        existing = existing_rows.get(str(src))
-        if (
-            existing
-            and not args.overwrite
-            and existing.get("status") == "ok"
-            and Path(existing.get("json") or json_path).exists()
-            and Path(existing.get("text") or txt_path).exists()
-        ):
-            rows.append(existing)
-            print(f"[{index}/{len(files)}] resume {src}")
-            write_manifest(report_dir, rows)
+    failed = False
+    for index, source in enumerate(files, start=1):
+        text_path, json_path = output_paths(source, root, output_dir)
+        print(f"[{index}/{len(files)}] {source}")
+        if text_path.exists() and json_path.exists() and not args.overwrite:
+            rows.append({"source": str(source), "status": "exists", "chars": "0", "note": "沿用已有成果"})
             continue
-
-        if ocr is None:
-            ocr = build_ocr(args)
-
-        print(f"[{index}/{len(files)}] {src}")
-        txt_path.parent.mkdir(parents=True, exist_ok=True)
-        json_path.parent.mkdir(parents=True, exist_ok=True)
-        start = time.monotonic()
-        row = {
-            "source": str(src),
-            "status": "ok",
-            "results": "0",
-            "text_chars": "0",
-            "json": str(json_path),
-            "text": str(txt_path),
-            "log": "",
-            "seconds": "0.0",
-            "note": "",
-        }
+        started = time.monotonic()
         try:
-            results = ocr.predict(str(src))
+            results = engine.predict(str(source))
             result_jsons = [result_to_json(result) for result in results]
-            texts = extract_texts(result_jsons)
-            text = "\n".join(texts).strip() + ("\n" if texts else "")
-            json_path.write_text(json.dumps(result_jsons, ensure_ascii=False, indent=2, default=json_default) + "\n", encoding="utf-8")
-            txt_path.write_text(text, encoding="utf-8")
-            row["results"] = str(len(result_jsons))
-            row["text_chars"] = str(len(text.strip()))
-            if len(text.strip()) < 20:
-                row["note"] = "low extracted text; spot-check visually"
+            text = "\n".join(extract_texts(result_jsons)).strip()
+            atomic_write_text(json_path, json.dumps(result_jsons, ensure_ascii=False, indent=2, default=json_default) + "\n")
+            atomic_write_text(text_path, text + ("\n" if text else ""))
+            note = f"{time.monotonic() - started:.1f}秒"
+            if len(text) < 20:
+                note += "；文字偏少，须人工核对"
+            rows.append({"source": str(source), "status": "ok", "chars": str(len(text)), "note": note})
         except KeyboardInterrupt:
             raise
         except Exception as exc:
-            row["status"] = "failed"
-            row["note"] = str(exc)
-        finally:
-            row["seconds"] = f"{time.monotonic() - start:.1f}"
-        rows.append(row)
-        write_manifest(report_dir, rows)
+            failed = True
+            rows.append({"source": str(source), "status": "failed", "chars": "0", "note": str(exc)})
 
-    write_manifest(report_dir, rows)
-    write_quality_report(report_dir, rows)
-    print(f"Files scanned: {len(files)}")
-    print(f"Manifest: {report_dir / 'paddleocr_manifest.csv'}")
-    print(f"Quality report: {report_dir / 'PaddleOCR质量检查.md'}")
-    return 0
+    report = output_dir / "PaddleOCR质检报告.md"
+    atomic_write_text(report, quality_report(rows))
+    print(f"成果：{output_dir}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
