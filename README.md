@@ -66,3 +66,4 @@ MIT License。
 - 2026-08-21 Codex 完成 v0.4.0 安全与简洁化改造并通过本地回归；产物：`chinese-lawyer-case-ocr-skill/`、`install.sh`、`tests/`。
 - 2026-08-21 Codex 完成 pypdf 安全补丁与完整 Paddle 回归；产物：`requirements-base.txt`、`requirements-paddle.txt`、`RELEASE_NOTES.md`。
 - 2026-08-21 Claude 新增 OCR 产物回归测试，用固定样本拦截依赖升级导致的静默劣化；缺 OCR 工具时自动跳过。产物：`tests/test_ocr_regression.py`、`tests/fixtures/`。
+- 2026-08-21 Claude 处理 Dependabot 升级：pypdfium2 5.13.0 经本机回归后合入；numpy 2.5.2 因与 paddlex 的 `numpy<2.4` 冲突而关闭，并在 `requirements-paddle.txt` 标注该上限。
