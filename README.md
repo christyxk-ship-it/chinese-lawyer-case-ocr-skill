@@ -4,10 +4,10 @@
 
 ## 特点
 
-- OCRmyPDF/Tesseract 批量处理，疑难页可选 PaddleOCR。
-- 不使用生成式视觉模型；OCR 仍可能错字或漏字，法律要素必须人工复核。
-- 案卷目录只保留一个 `OCR成果/`，不生成过程文件夹。
-- 安装时明确选择宿主，已有 Skill 先备份，失败自动恢复。
+特别为中文诉讼律师、尤其是刑辩律师的需求设计。
+
+- 为避免 AI 幻觉，不使用任何生成式视觉大模型；OCR 仍可能错字或漏字，法律要素必须人工复核。
+- 先用 OCRmyPDF/Tesseract 批量打底，质检报告逐页标出低文本等疑难页；需要时再用评估脚本给出逐页建议，只对必要页面使用 PaddleOCR，不整卷重跑。
 
 ## 系统
 
@@ -65,3 +65,4 @@ MIT License。
 - 2026-08-21 Codex 修复维护脚本的同源风险并发布 `3fed354`。
 - 2026-08-21 Codex 完成 v0.4.0 安全与简洁化改造并通过本地回归；产物：`chinese-lawyer-case-ocr-skill/`、`install.sh`、`tests/`。
 - 2026-08-21 Codex 完成 pypdf 安全补丁与完整 Paddle 回归；产物：`requirements-base.txt`、`requirements-paddle.txt`、`RELEASE_NOTES.md`。
+- 2026-08-21 Claude 新增 OCR 产物回归测试，用固定样本拦截依赖升级导致的静默劣化；缺 OCR 工具时自动跳过。产物：`tests/test_ocr_regression.py`、`tests/fixtures/`。
