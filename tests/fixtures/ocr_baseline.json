@@ -1,0 +1,21 @@
+{
+  "说明": "sample_judgment.pdf 经 OCRmyPDF 处理后应达到的基线。数值由实测记录，用于发现依赖升级导致的静默劣化。识别结果不必完美，但必须稳定：同一份样本重复处理三次输出字节一致。",
+  "命令": "ocrmypdf -l chi_sim+eng --skip-text --rotate-pages --optimize 1",
+  "提取方式": "pypdf PdfReader.extract_text()，去除空格与换行后比较",
+  "录制日期": "2026-08-21",
+  "pages": 1,
+  "required_keywords": [
+    "北京市第一中级人民法院",
+    "民事判决书",
+    "测试样本",
+    "非真实案件",
+    "2026",
+    "0001",
+    "张三",
+    "李四",
+    "判决如下",
+    "二零二六年八月二十一日"
+  ],
+  "text_length": 108,
+  "text_length_tolerance": 0.15
+}
