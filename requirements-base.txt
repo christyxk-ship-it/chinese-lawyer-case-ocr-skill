@@ -1,5 +1,5 @@
 numpy==2.5.1
-pypdf==6.14.2
+pypdf==6.16.1
 pypdfium2==5.11.0
 Pillow==12.3.0
 reportlab==5.0.0
