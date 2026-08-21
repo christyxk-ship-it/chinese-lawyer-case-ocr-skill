@@ -25,7 +25,7 @@ RELEASE_DESCRIPTION = (
 AGENT_OPENAI_YAML = """interface:
   display_name: "中文执业律师案卷OCR-SKILL"
   short_description: "中文法律案卷 OCR，生成可检索 PDF，并逐页质检文字层"
-  default_prompt: "使用 $chinese-lawyer-case-ocr-skill 对中文法律案卷 PDF 做 OCR：先评估分流，再用 OCRmyPDF/Tesseract 批量生成可检索 PDF；对核心、横向、低文本或疑难页面用 PaddleOCR 增强；最终只保留一份可搜索 PDF，并输出逐页文字层质检报告。"
+  default_prompt: "使用 $chinese-lawyer-case-ocr-skill 在本地处理中文法律案卷 PDF，只保留 OCR成果目录，并核对质检报告后再说明是否完成。"
 """
 
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
@@ -175,9 +175,13 @@ def public_package_matches(source: Path, repo: Path) -> bool:
 def validate(public_skill: Path, repo: Path) -> None:
     for py_file in sorted((public_skill / "scripts").glob("*.py")):
         ast.parse(py_file.read_text(encoding="utf-8"))
+    ast.parse((repo / "tools" / "sync_from_local_skill.py").read_text(encoding="utf-8"))
     validator = Path.home() / ".codex" / "skills" / ".system" / "skill-creator" / "scripts" / "quick_validate.py"
     if validator.exists():
         run([sys.executable, str(validator), str(public_skill)], repo)
+    run(["bash", "-n", "install.sh"], repo)
+    if (repo / "tests").exists():
+        run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], repo)
     first_lines = (public_skill / "SKILL.md").read_text(encoding="utf-8").splitlines()[:3]
     if f"name: {RELEASE_SKILL_NAME}" not in first_lines:
         raise SystemExit("public SKILL.md name was not preserved")

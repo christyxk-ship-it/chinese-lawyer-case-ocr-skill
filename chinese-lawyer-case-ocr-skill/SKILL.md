@@ -1,116 +1,38 @@
 ---
 name: chinese-lawyer-case-ocr-skill
-description: "在本地把扫描件/图片型中文法律案卷 PDF 转成可检索 PDF 并质检。当用户要求 OCR 案卷、让判决书等扫描 PDF 可搜索/可复制文字、给 PDF 加文字层，或提供的 PDF 无法选中文字时使用。"
+description: "在本地把扫描件或图片型中文法律案卷 PDF 转成可检索 PDF，并生成逐页文本和质检报告。用于 PDF 无法搜索、复制文字或需要批量添加文字层的场景。"
 ---
 
-# 案件 PDF OCR
+# 中文法律案卷 OCR
 
-## 原则
+目标：不改原件、不上传文件，只在案卷目录生成一个 `OCR成果/`。
 
-目标是可检索 PDF。先用省算力的 OCRmyPDF/Tesseract 批量打底，PaddleOCR 只增强评估出的疑难页。未经用户明确授权，不上传法律 PDF 到云端。
+## 标准处理
 
-所有命令先 `cd` 到案卷根目录再执行（脚本默认输出目录随输入路径解析），脚本用绝对路径引用，`SKILL` 设为本 SKILL.md 所在目录：
-
-```bash
-SKILL=<本 skill 安装目录>   # 即本文件所在目录，如 ~/.workbuddy/skills/chinese-lawyer-case-ocr-skill
-```
-
-## 标准流程
-
-1. 评估分流：
+1. 先确认用户允许在本机安装依赖；任何案卷上传云端都须另行明确授权。
+2. 将 `SKILL` 指向本目录，运行：
 
 ```bash
-python3 "$SKILL/scripts/assess_ocr_strategy.py" .
+python3 "$SKILL/scripts/ocr_case_pdfs.py" "<案卷文件夹>" --profile balanced
 ```
 
-产物在 `OCR过程文件/报告/`：`ocr_strategy.md/.csv`，以及每件的 `<名>.paddle_pages.txt` / `<名>.ocrmypdf_pages.txt` 页码范围。
+批量附件可用 `fast`；核心证据或质量较差的扫描件用 `careful`。只有明确要推倒旧文字层时才用 `--mode redo-ocr` 或 `force-ocr`。
 
-2. 基础 OCR（批量）：
+3. 只有命令退出码为 0，且 `OCR成果/OCR质检报告.md` 没有失败项，才可报告技术处理完成。
+4. 核对每份 PDF 页数、可搜索性和低文本页面；姓名、案号、日期、金额、手写、表格、签章及印章必须对照原图人工复核。
 
-```bash
-python3 "$SKILL/scripts/ocr_case_pdfs.py" . --mode skip-text --profile fast --sanitize-input always
-```
+## 输出
 
-注意：`fast` 档不做自动旋转/纠偏。核心证据或正式交付件改用 `careful` 或 `balanced`；繁体材料 `--languages` 加 `chi_tra`。
+`OCR成果/` 是唯一保留目录：
 
-`fast` 档不设整本文件超时，几百页的大部头可放心跑（旧版 240 秒上限会把大文件跑到一半杀掉、并丢弃已完成的全部页）；防卡死由单页 30 秒上限负责。真需要限时用 `--file-timeout <秒>`，但要记得超时等于该文件全损、重跑从头开始。
+- `<原名>_OCR.pdf`：可搜索 PDF。
+- `<原名>_OCR.md`：按页提取的文本。
+- `OCR质检报告.md`：失败项和低文本页。
 
-3. 疑难页增强（评估出 paddle 页时）。先生成方向正确、无旧文字层的底稿，再叠加，验收后替换基础版：
+中间 PDF、缓存和日志只使用系统临时目录或 `~/.case-pdf-ocr/` 的全局依赖缓存，不在案卷目录保留过程文件夹。
 
-```bash
-# 方向判断基准是"阅读器里的显示方向"：gs 栅格化按显示方向渲染并自动消化 /Rotate 标记。
-# 显示已正立的页（含靠 /Rotate 标记正立的）直接 gs，禁止再 --rotate——加了反而会转倒。
-qpdf "input.pdf" --rotate=+90:3,7 -- "OCR过程文件/底稿/input_旋转.pdf"        # 仅当第3、7页在阅读器里显示方向不正时
-gs -o "OCR过程文件/底稿/input_底稿.pdf" -sDEVICE=pdfimage24 -r300 "OCR过程文件/底稿/input_旋转.pdf"   # 栅格化：固化显示方向并剥掉旧文字层
-python3 "$SKILL/scripts/paddle_searchable_pdf.py" "OCR过程文件/底稿/input_底稿.pdf" "OCR成果/input_OCR.new.pdf" \
-  --base-pdf "OCR成果/input_OCR.pdf" --pages "$(cat 'OCR过程文件/报告/input.paddle_pages.txt')" \
-  --fail-if-selected-has-text --dump-text "OCR过程文件/转写/input.txt"
-gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -sOutputFile=- "OCR成果/input_OCR.new.pdf" | head -20   # 第二提取器抽查：必须能读出中文，防止文字层只对部分阅读器可见
-mv "OCR成果/input_OCR.new.pdf" "OCR成果/input_OCR.pdf"                        # 验收通过后替换，只留一份
-```
+## PaddleOCR 增强
 
-档位倍率低于底稿原生分辨率：`careful` 按 2.6 倍渲染，而 `-r300` 底稿原生约 4.2 倍，等于降采样。正文页无碍，但**落款/签章页那种宽字距竖排职务栏容易整列漏字**——职务读出来了，姓名整列丢；调高 `--scale` 也未必捞得回，这类页 Tesseract `--psm 6` 往往更强。宁可在质检报告里标注人工核对结果，也不要手工往文字层塞字：那是转写，不是识别。
+基础版在要害页效果不足时，先运行 `assess_ocr_strategy.py`；它默认只在终端打印建议，不写过程文件。再只对必要页使用 `paddle_searchable_pdf.py`。该脚本要求新输出路径，拒绝直接覆盖原件或已有成果。
 
-4. 压缩（走过 Paddle 底稿路线后必做）。`-sDEVICE=pdfimage24` 底稿是无压缩位图，成果体积会涨 3–4 倍；用 pdfwrite 重编码压回去，文字层与页数无损：
-
-```bash
-gs -o "OCR成果/input_OCR.cmp.pdf" -sDEVICE=pdfwrite -dCompatibilityLevel=1.7 \
-  -dDownsampleColorImages=true -dColorImageResolution=200 -dColorImageDownsampleType=/Bicubic \
-  -dDownsampleGrayImages=true -dGrayImageResolution=200 -dGrayImageDownsampleType=/Bicubic \
-  -dAutoFilterColorImages=false -dColorImageFilter=/DCTEncode \
-  -dAutoFilterGrayImages=false -dGrayImageFilter=/DCTEncode \
-  -dJPEGQ=88 -dNOPAUSE -dBATCH -q "OCR成果/input_OCR.pdf"
-mv "OCR成果/input_OCR.cmp.pdf" "OCR成果/input_OCR.pdf"
-```
-
-200dpi/q88 与 300dpi 肉眼无差，实测一批 68 页案卷 123MB → 40MB。案卷要寄检察院、上传或邮件外发时这步别省；压完重跑第 5 步核对页数与文字量。
-
-5. 验收：重跑第 2 步命令即可——manifest 断点续跑不会重复 OCR，只从最终 PDF 刷新 md 副本、逐页文字量清单和结构检查。然后核对 `OCR过程文件/报告/` 下的 `OCR质量检查.md` 与 `page_text_manifest.csv`：页数一致、逐页文字量无异常，后几页、横页、签章页逐页核对。签章页文字少要在报告说明"页面内容本身少"，不能默认为识别成功。
-
-再查文字层码位——有些 OCR 产品输出的汉字落在康熙部首区（`⼈` `⺠` `⽉`），或把数字逐字符拆开（`2 0 2 1年1⽉4 ⽇`），人眼看着正常但检索全废：
-
-```bash
-python3 -c "
-import sys, re
-R=[(0x2E80,0x2EFF),(0x2F00,0x2FDF),(0xF900,0xFAFF),(0xFE30,0xFE4F)]
-t=open(sys.argv[1],encoding='utf-8').read()
-print('异体字符', sum(any(a<=ord(c)<=z for a,z in R) for c in t), '数字被拆', len(re.findall(r'\d \d', t)))
-" "OCR成果/input_OCR.md"
-```
-
-两项都应为 0。自己写检查时**按 `ord()` 判码位，别用字面量区间正则**——把兼容表意文字区写成 `豈-﫿` 会吞掉大片正常汉字，误报成灾。这条同样是判断一份旧 OCR 成果要不要重做的首选依据。
-
-## 分流规则
-
-- 已有文字层：`skip-text` 保留，不重复 OCR。
-- 普通扫描页：OCRmyPDF/Tesseract，批量、省算力。
-- 核心证据、表格密集、横向/旋转、印章、低文本或乱码页：PaddleOCR（必须先做底稿）。
-- 落款/签章页（宽字距竖排职务栏）：Paddle 易整列漏姓名，Tesseract `--psm 6` 反而更稳；两者都不全时，以人工核对结果写进质检报告，不动文字层。
-- 只要文本/坐标、不需要可搜索 PDF：`scripts/paddleocr_extract.py`。
-
-## 防止方向/文字层错位
-
-- 旋转/横向/水印页：先按第 3 步 qpdf+gs 生成底稿再 OCR；禁止在旧 OCR 成品上直接叠文字层，`--fail-if-selected-has-text` 兜底。
-- 方向以阅读器**显示方向**为准：显示正立的页只做 gs 栅格化，不加 `--rotate`（对靠 /Rotate 标记正立的页加 `--rotate` 会把成果转倒）；栅格化后核对底稿页的宽高横竖与显示一致再继续。
-- `--profile fast` 不做自动旋转：旋转页必须走 Paddle 底稿路线，或改用 balanced/careful。
-
-## 输出约定
-
-- `OCR成果/`：每个原件恰好两个文件——`<原名>_OCR.pdf`（唯一最终可检索 PDF，增强版验收后替换基础版）和 `<原名>_OCR.md`（逐页文本副本，供检索与引用）。
-- `OCR过程文件/`：`报告/`（评估、manifest、质检、日志）、`底稿/`（无文字层输入与修正备份）、`转写/`（PaddleOCR 转写与 JSON 结构）、`缓存/`（仅源缓存不可用时使用）。
-- 旧流程生成的其他 OCR 目录，整理时并入上述结构。
-
-## 省算力与省 token
-
-- 先评估再跑，先抽样再全量；OCRmyPDF 达标就不上 PaddleOCR；PaddleOCR 只跑评估页码。
-- 例外：先抽查基础版的要害页（判项、案号、当事人姓名）。淡墨或细笔画扫描件上 Tesseract 常错得密集且正好错在这些位置，此时别死守评估页码，直接全页上 Paddle——错在要害处的代价远高于那点算力。
-- 尊重 manifest 和已有输出，不随意 `--overwrite`。
-- 法律分析用 `rg` 在 `OCR成果/*.md` 定向检索（关键词、人名、案号、金额），不把全文塞进对话。
-
-## 跨 Agent 使用
-
-脚本是普通本地 Python，其他 agent（workbuddy、Claude、Hermes）可按同一流程直接调用；跨 agent 状态写 `.agents-shared/state/board.yaml`。
-
-## 依赖与兜底
-
-安装检查、PaddleOCR 缓存、OCRmyPDF 参数细节、故障排查见 `references/install-and-fallbacks.md`。
+PaddleOCR 只是另一种 OCR，也会错字、漏字；不能依据上下文补造文字。具体参数和异常处理见 [references/install-and-fallbacks.md](references/install-and-fallbacks.md)。

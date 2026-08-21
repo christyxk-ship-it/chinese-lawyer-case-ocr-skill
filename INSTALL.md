@@ -1,127 +1,51 @@
-# 安装说明（本文写给执行安装的 AI 助手）
+# 安装说明（给执行安装的 Agent）
 
-你是用户的 AI 助手（WorkBuddy / Codex / Claude Code 等）。请按以下步骤把本技能包安装到用户机器上。目标平台为 macOS。每一步先自检再继续，失败时把错误原样告诉用户并按"故障排查"处理，不要假装成功。
+目标平台是 macOS。安装会写入 `~/.case-pdf-ocr/` 和用户明确选择的一个或多个宿主目录；执行前说明这些变更并取得用户同意。
 
-## 0. 前提检查
+## 1. 前提
 
-```bash
-uname -s          # 期望 Darwin
-python3 --version # 推荐 3.10+；3.9 实测可用（Intel 老 Mac 自带 3.9.6 亦可跑通）；报版本相关错误时见第 1 步末尾的"Python 补救"
-
-# 先查四件 OCR 工具是否已经在（有些机器早先用别的方式装过，这类机器不需要 Homebrew）
-which ocrmypdf qpdf gs tesseract
-tesseract --list-langs 2>/dev/null | grep chi_sim
-```
-
-分支判断：
-
-- 四件工具都有路径**且**含 `chi_sim` → **整个第 1 步跳过**，直接从第 2 步开始，不必检查也不必安装 Homebrew。
-- 缺任意一件 → 进入第 1 步；此时再 `which brew`，无输出就按第 1 步的"没有 Homebrew 时的人机分工"处理。
-
-## 1. 命令行工具（OCR 主引擎）
-
-仅在第 0 步检出工具缺失时执行。
+先检查：
 
 ```bash
-brew install ocrmypdf qpdf ghostscript tesseract tesseract-lang
+uname -s
+brew --version
 ```
 
-- 自检（三项都必须通过）：
+必须是 macOS，并已安装 Homebrew。没有 Homebrew 时停止，向用户说明需要其本人完成官方安装，不索要或代输系统密码。
+
+## 2. 安装
+
+必须显式选择宿主：
 
 ```bash
-which ocrmypdf qpdf gs tesseract        # 四个都要有路径
-tesseract --list-langs | grep chi_sim   # 必须包含 chi_sim
-ocrmypdf --version
+./install.sh --target codex
+./install.sh --target workbuddy
+./install.sh --target claude
 ```
 
-### 没有 Homebrew 时的人机分工
+多个宿主可写在同一条命令中，例如 `--target codex --target claude`。不得自行扩大目标。
 
-安装 Homebrew 需要用户本人输入开机密码。**你（AI）绝不索要密码、绝不代输密码，也不要卡在等待系统写权限上**——改为引导用户亲手完成这一步：
+安装器会：
 
-1. 先查命令行工具：`xcode-select -p`；未安装则运行 `xcode-select --install`，等用户在弹窗里点完"安装"再继续。
-2. 把下面这条官方安装命令原样展示给用户，请用户打开"终端"App 粘贴运行，并提前说明：过程中要输入开机密码（屏幕不显示输入是正常的）、中途可能需按回车确认、全程约几分钟：
+- 只补装缺失的本地 OCR 工具；
+- 使用固定核心依赖版本建立 Python 3.12/3.13 环境；
+- 比较 Skill，已有版本先备份到 `~/.case-pdf-ocr/backups/<时间>/`；
+- 任一步失败时恢复本轮已替换的环境和 Skill；
+- 运行 OCRmyPDF 与 PaddleOCR 自检。
+
+Intel Mac 只安装 OCRmyPDF 基础路线，不安装当前官方已停止支持的 PaddlePaddle x86_64 版本。
+
+## 3. 验收
+
+安装命令必须以退出码 0 结束。也可再次运行：
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+python3 <Skill目录>/scripts/ocr_case_pdfs.py --check-tools
+python3 <Skill目录>/scripts/paddle_searchable_pdf.py --check-tools
 ```
 
-3. 提醒用户：若安装结束时终端提示运行两行 `eval` 开头的命令（把 brew 加入 PATH），照提示执行。
-4. 用户回复"装好了"之后，运行 `brew --version` 验证；找不到时检查 `/opt/homebrew/bin/brew`（Apple 芯片）或 `/usr/local/bin/brew`（Intel）是否存在，并帮用户配置 PATH。
-5. 验证通过后，回到本步开头继续 `brew install`。
+任一命令非零即未完成；不得只看到部分版本号就报告成功。Intel Mac 不要求第二项。
 
-### Python 补救（可选）
+## 4. 数据边界
 
-系统 Python 3.9 实测可跑通全部依赖；若安装依赖时因 Python 版本报错，或想用更新版本：
-
-```bash
-brew install python@3.12
-PYBIN="$(brew --prefix)/opt/python@3.12/bin/python3.12"
-```
-
-后续第 2、3 步创建虚拟环境时，用 `"$PYBIN"` 替代 `python3`。
-
-## 2. 基础 Python 环境
-
-```bash
-python3 -m venv ~/.case-pdf-ocr/venv
-~/.case-pdf-ocr/venv/bin/pip install --upgrade pip
-~/.case-pdf-ocr/venv/bin/pip install numpy pypdf pypdfium2 pillow reportlab
-```
-
-## 3. PaddleOCR 环境（高精度增强引擎）
-
-体积较大（约 1–2 GB），下载需要几分钟，请提前告知用户。
-
-```bash
-python3 -m venv ~/.case-pdf-ocr/paddle
-~/.case-pdf-ocr/paddle/bin/pip install --upgrade pip
-~/.case-pdf-ocr/paddle/bin/pip install paddlepaddle paddleocr numpy pypdf pypdfium2 pillow reportlab safetensors
-```
-
-OCR 模型会在首次实际运行时自动下载到 `~/.case-pdf-ocr/paddle/cache/`（全局缓存，只下载一次）。
-
-Intel Mac 注意：paddlepaddle 只会装到 3.0.0（3.1+ 无 Intel 轮子），属正常现象——脚本内置静态→动态引擎自动回退，可正常使用。
-
-## 4. 安装 skill 本体
-
-把本仓库中的 `chinese-lawyer-case-ocr-skill/` 目录复制到你（AI 助手）的技能目录：
-
-| 宿主 | 目标路径 |
-|---|---|
-| WorkBuddy | `~/.workbuddy/skills/chinese-lawyer-case-ocr-skill` |
-| Codex | `~/.codex/skills/chinese-lawyer-case-ocr-skill` |
-| Claude Code | `~/.claude/skills/chinese-lawyer-case-ocr-skill` |
-
-```bash
-cp -R <解压目录>/chinese-lawyer-case-ocr-skill ~/.workbuddy/skills/   # 按宿主替换目标
-```
-
-## 5. 自检
-
-```bash
-SKILL=~/.workbuddy/skills/chinese-lawyer-case-ocr-skill   # 按实际安装位置
-python3 "$SKILL/scripts/ocr_case_pdfs.py" --check-tools
-# 期望：ocrmypdf/tesseract/gs/qpdf 四项均有路径，无 MISSING（unpaper 可以 MISSING）
-python3 "$SKILL/scripts/paddle_searchable_pdf.py" --check-tools
-# 期望：python 指向 ~/.case-pdf-ocr/paddle/bin/python；paddleocr/pypdf/reportlab 等均有版本号；font 为 CaseOCR-CJK
-```
-
-两项自检都通过即安装完成。向用户报告结果，并告诉用户以后这样使用：
-
-> 用 chinese-lawyer-case-ocr-skill 对 <案卷文件夹路径> 做 OCR。
-
-## 环境变量（通常不需要）
-
-- `CASE_OCR_PYTHON`：基础依赖 Python 解释器（默认自动探测 `~/.case-pdf-ocr/venv`）。
-- `CASE_OCR_PADDLE_ROOT`：PaddleOCR 虚拟环境目录（默认自动探测 `~/.case-pdf-ocr/paddle`）。
-
-## 故障排查
-
-- 依赖细节、OCRmyPDF 参数、缓存与兜底策略：见 `chinese-lawyer-case-ocr-skill/references/install-and-fallbacks.md`。
-- PaddleOCR 首次运行报模型/网络错误：说明模型尚未缓存，允许联网重试一次即可。
-- OCRmyPDF 警告 `No installed font has glyphs for the detected 'chi_sim' text`：**不是 OCR 失败，不用重跑**。实测文字层照样可搜索、可复制、可被质检脚本读出，只是在阅读器里高亮那段文字时显示空白。macOS 不自带 Noto CJK；想让高亮正常显示就装 `brew install --cask font-noto-sans-cjk`，不装不影响交付件可检索。
-- 任何工具缺失时不要假装 OCR 成功——如实告知用户缺什么、装什么。
-
-## 红线
-
-未经用户明确授权，绝不把案卷 PDF 上传到任何云端 OCR 服务。全部处理必须在本机完成。
+依赖和 Paddle 模型会联网下载，但 OCR 输入不会上传。未经用户针对具体文件明确授权，不得改用任何云端 OCR 服务。
