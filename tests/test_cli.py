@@ -82,7 +82,7 @@ class MainOcrTests(unittest.TestCase):
                 return "ok", "", candidate
 
             def fake_inspect(path, sample_pages):
-                return self.module.PdfStats(1 if path == source else 2, 100)
+                return self.module.PdfStats(1 if path.name == source.name else 2, 100)
 
             tools = {name: f"/{name}" for name in ("ocrmypdf", "tesseract", "gs", "qpdf")}
             with mock.patch.object(self.module, "dependency_status", return_value=tools), \
