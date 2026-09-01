@@ -1,8 +1,8 @@
 paddlepaddle==3.3.1
 paddleocr==3.7.0
-numpy==2.3.5  # 不要升到 2.4 及以上：paddlex 要求 numpy<2.4，升级会让本文件无法安装
+numpy==2.5.2  # 不要升到 2.4 及以上：paddlex 要求 numpy<2.4，升级会让本文件无法安装
 pypdf==6.16.2
 pypdfium2==5.13.0
 Pillow==12.3.0
-reportlab==5.0.0
+reportlab==5.0.1
 safetensors==0.8.0
