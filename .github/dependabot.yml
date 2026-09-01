@@ -8,6 +8,13 @@ updates:
       python-deps:
         patterns:
           - "*"
+    # numpy 不交给 Dependabot：requirements-base.txt 可以随最新版走，
+    # requirements-paddle.txt 却被 paddlex 的 numpy<2.4 卡死，而 Dependabot
+    # 无法按文件区分，只会把两处一并升到装不上的版本（2026-08-21、2026-09-01 各犯一次）。
+    # 改为每月人工巡查，误升由 tests 里的上限守卫兜底。
+    ignore:
+      - dependency-name: numpy
+        versions: [">=2.4"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
