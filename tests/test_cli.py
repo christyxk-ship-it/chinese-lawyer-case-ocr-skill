@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -150,6 +151,17 @@ class PackagingTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn(".agents-shared", skill)
         self.assertNotIn("OCR过程文件", skill + readme)
+
+    def test_paddle_numpy_stays_below_paddlex_ceiling(self):
+        """paddlex 要求 numpy<2.4，Dependabot 认不出这条约束，只能在这里拦。"""
+        text = (ROOT / "requirements-paddle.txt").read_text(encoding="utf-8")
+        found = re.search(r"^numpy==(\d+)\.(\d+)", text, re.MULTILINE)
+        self.assertIsNotNone(found, "requirements-paddle.txt 必须固定 numpy 版本")
+        self.assertLess(
+            (int(found.group(1)), int(found.group(2))),
+            (2, 4),
+            "paddlex 要求 numpy<2.4，升到 2.4 及以上会让 Paddle 路线装不上",
+        )
 
     def test_installer_requires_explicit_target(self):
         help_result = subprocess.run(["bash", str(ROOT / "install.sh"), "--help"], text=True, capture_output=True)
