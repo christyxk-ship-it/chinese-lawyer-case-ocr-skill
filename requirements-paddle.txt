@@ -4,5 +4,5 @@ numpy==2.3.5  # 不要升到 2.4 及以上：paddlex 要求 numpy<2.4，升级�
 pypdf==6.16.1
 pypdfium2==5.13.0
 Pillow==12.3.0
-reportlab==5.0.0
+reportlab==5.0.1
 safetensors==0.8.0
