@@ -255,7 +255,8 @@ def sanitize_pdf(src: Path, work_dir: Path) -> tuple[Path | None, str]:
 
 def run_ocr_attempt(args: argparse.Namespace, src: Path, dst: Path) -> tuple[int, str, str, Path | None]:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(prefix=f".{dst.stem}.", suffix=".partial.pdf", dir=dst.parent, delete=False) as handle:
+    # No leading dot: iCloud Drive sets UF_HIDDEN on dot-files within ~1s, and the flag survives the rename to dst.
+    with tempfile.NamedTemporaryFile(prefix=f"{dst.stem}.", suffix=".partial.pdf", dir=dst.parent, delete=False) as handle:
         partial = Path(handle.name)
     try:
         code, stdout, stderr, timeout_note = run_process(ocr_command(args, src, partial), args.file_timeout or 0)
@@ -325,7 +326,7 @@ def qpdf_check(pdf: Path) -> tuple[bool, str]:
 
 def atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f".{path.name}.", dir=path.parent, delete=False) as handle:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f"{path.name}.", suffix=".partial", dir=path.parent, delete=False) as handle:
         handle.write(content)
         temporary = Path(handle.name)
     temporary.replace(path)
