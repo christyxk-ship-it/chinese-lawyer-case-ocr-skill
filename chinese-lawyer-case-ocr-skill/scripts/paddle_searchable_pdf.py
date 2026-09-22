@@ -297,7 +297,8 @@ def add_overlay(page: object, lines: list[tuple[str, tuple[float, float, float, 
 
 def atomic_write_pdf(writer, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(prefix=f".{output.stem}.", suffix=".partial.pdf", dir=output.parent, delete=False) as handle:
+    # No leading dot: iCloud Drive sets UF_HIDDEN on dot-files within ~1s, and the flag survives the rename to output.
+    with tempfile.NamedTemporaryFile(prefix=f"{output.stem}.", suffix=".partial.pdf", dir=output.parent, delete=False) as handle:
         temporary = Path(handle.name)
     try:
         with temporary.open("wb") as handle:
@@ -309,7 +310,7 @@ def atomic_write_pdf(writer, output: Path) -> None:
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f".{path.name}.", dir=path.parent, delete=False) as handle:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f"{path.name}.", suffix=".partial", dir=path.parent, delete=False) as handle:
         handle.write(text)
         temporary = Path(handle.name)
     temporary.replace(path)

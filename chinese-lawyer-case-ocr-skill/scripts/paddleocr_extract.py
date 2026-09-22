@@ -190,7 +190,8 @@ def extract_texts(result_jsons: list[Any]) -> list[str]:
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f".{path.name}.", dir=path.parent, delete=False) as handle:
+    # No leading dot: iCloud Drive sets UF_HIDDEN on dot-files, and the flag survives the rename to path.
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix=f"{path.name}.", suffix=".partial", dir=path.parent, delete=False) as handle:
         handle.write(text)
         temporary = Path(handle.name)
     temporary.replace(path)
