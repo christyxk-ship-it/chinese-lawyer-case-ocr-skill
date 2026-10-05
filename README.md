@@ -74,3 +74,4 @@ MIT License。
 - 2026-09-08 Codex 按潜川授权，将本机五处 OCR Skill 部署统一为 GitHub main c3158e9 对应的完整 Skill 包，四运行时目录软链、WorkBuddy 同哈希副本；现有两条 OCR 运行路线工具自检通过，未推送仓库。验收记录留存本机。
 - 2026-09-22 Claude 修复 iCloud「桌面与文稿」同步文件夹里 OCR 成果在访达中看不见：处理中临时文件名原以「.」开头，处理稍久就会被系统标为隐藏，改名为正式成果后仍隐藏；现改为以原文件名开头，本机新旧版对照实测确认。旧版成果看不见时，恢复办法见说明文件「失败处理」一节。产物：`chinese-lawyer-case-ocr-skill/scripts/`、`chinese-lawyer-case-ocr-skill/references/install-and-fallbacks.md`。
 - 2026-09-22 Claude 更正 2026-09-08 Codex 那条：删去其中本机绝对路径，改为「验收记录留存本机」，结论未动；另打开 GitHub 仓库「合并后自动删除分支」设置，合并完的临时分支不再堆积。产物：`README.md`。
+- 2026-10-03 Claude 云端月度上游巡查：待办 Issue 为空，Dependabot 有两个待处理 PR（pypdf 6.16.2→6.19.0、GitHub Actions 两项更新），由维护者按惯例经回归后处理。经 PyPI 两个独立端点（JSON 接口与包索引页）核实：ocrmypdf 17.13.0、paddleocr 3.7.0、paddlepaddle 3.3.1、pypdf 6.19.0、pypdfium2 5.13.0；paddleocr、paddlepaddle、pypdfium2 与仓库锁定版本一致，PyPI 对 pypdf 未登记安全公告。云端未能核实：Homebrew（ocrmypdf/tesseract/ghostscript 当前版本）、GitHub 安全公告与各项目发布页、上游新 OCR 项目扫描（网络被拦或超出本次访问范围），不凭记忆补数字，请维护者在本机补查。除上述待补查项外，无值得行动的发现。
