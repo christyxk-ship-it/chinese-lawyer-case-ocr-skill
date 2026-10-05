@@ -1,5 +1,11 @@
 # 发布说明
 
+## v0.4.2
+
+- 将两条路线的 `pypdf` 从 6.16.2 升级到 6.19.0，修复 GitHub 安全公告库登记的 8 条 pypdf 公告——都是畸形 PDF 可让程序长时间运行或占用大内存的问题（GHSA-qv6h-rv94-w285、GHSA-5jq2-8x83-x246、GHSA-fp3h-c4fm-7vvf、GHSA-g9cg-prrw-2r8q、GHSA-jw7q-gvrg-4vj3、GHSA-v247-6f48-mgcj、GHSA-php9-fj8v-98fj、GHSA-w23x-9jrw-r45c）。已在隔离环境通过 16 项测试（含 OCR 真实样本回归）与 Paddle 路线依赖试算。
+- CodeQL 工作流的 `codeql-action` init 与 analyze 同步升级。
+- 补记 v0.4.1 之后未写进本文件的两次改动：2026-09-01 依赖升级（`pypdf` 6.16.2、`reportlab` 5.0.1、基础路线 `numpy` 2.5.2，并把 `numpy` 移出 Dependabot 管辖、加上限守卫测试）；2026-09-22 修复 iCloud 同步文件夹里 OCR 成果在访达中看不见的问题（处理中的临时文件名不再以点开头）。
+
 ## v0.4.1
 
 - 将两条路线的 `pypdf` 从 6.14.2 升级到 6.16.1，修复 GHSA-fwg2-594c-jp42 与 GHSA-fp3f-mc75-235c 所涉的大内存占用/长时间运行风险。
