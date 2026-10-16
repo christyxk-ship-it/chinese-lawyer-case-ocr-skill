@@ -36,6 +36,11 @@ python3 "$SKILL/scripts/paddleocr_extract.py" "<案卷文件夹>"
 
 结果仍写入 `OCR成果/`。模型缓存统一放在 `~/.case-pdf-ocr/`，不在案卷目录生成缓存文件夹。
 
+已知两点：
+
+- 落款、签章页那种宽字距竖排职务栏，PaddleOCR 可能整列漏掉姓名（`careful` 档渲染倍率低于 300dpi 底稿的原生倍率）。这类页标为人工核对，不硬灌文字层。
+- Paddle 成果体积常涨 3—4 倍。收尾可用 `gs -sDEVICE=pdfwrite -dColorImageResolution=200 -dColorImageFilter=/DCTEncode -dJPEGQ=88` 重编码，文字层与页数不变；先另存验收，再决定是否替换。
+
 ## 失败处理
 
 - 退出码 `0`：脚本完成，仍须读质检报告。
