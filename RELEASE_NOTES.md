@@ -1,5 +1,14 @@
 # 发布说明
 
+## v0.4.4
+
+- 将两条路线的 `pypdf` 从 6.21.2 升级到 6.21.4：修复 10-30 新登记的 7 条高危公告（GHSA-5849-834g-hvw5、GHSA-cggf-277g-3q54、GHSA-mfr5-77xh-9j7h、GHSA-42gh-23hr-vphw、GHSA-4vqv-7265-gm2w、GHSA-62m5-6wh8-28x7、GHSA-x3rh-gjgm-fmqc，都是畸形 PDF 可让程序死循环、长时间运行或占用大内存），GitHub 安全公告库与 PyPI 漏洞库条数一致，后者对 6.21.4 不再登记任何漏洞。
+- 将两条路线的 `pypdfium2` 从 5.13.0 升级到 5.14.0（底层 PDFium 从 7913 更新到 8076，并补上字节流读入长度校验），`reportlab` 从 5.0.1 升级到 5.1.0（含 5.0.2 起的安全修复；要求 Python 3.10 以上，本 skill 用 3.12/3.13，不受影响）。
+- 基础路线 `numpy` 从 2.5.2 升级到 2.5.4（补丁版）；Paddle 路线仍锁 2.3.5，paddlex 3.7.2 仍要求 numpy<2.4。
+- 以上均已在隔离环境装新版通过 16 项测试（含 OCR 真实样本回归，无跳过）与 Paddle 路线依赖试算；reportlab 新旧版另用 Paddle 路线文字层函数做样本对照，生成文件逐字节相同，pypdf 与 pdfium 两条提取路径读出文字一致。
+- CI 工作流 `setup-python` 升到 v7.1.0，`codeql-action` 的 init 与 analyze 同升到 v4.39.1。
+- 两条须知（不是本仓库改动）：Tesseract 5.5.4（10-28）修复 10 条公告，其中 GHSA-jrf4-mx9r-v94h 用正常图片、多语言模式（本 skill 的 `chi_sim+eng` 正是）就可能触发崩溃——新装用户经 Homebrew 自动得到 5.5.4，已装用户请执行 `brew upgrade tesseract`。Ghostscript 的 -dSAFER 沙箱绕过（CVE-2026-101258，高危，可执行任意命令）上游尚无修复版本，当前最新 10.08.0 仍受影响；在上游修复前，只用本 skill 处理来源可信的案卷。
+
 ## v0.4.3
 
 - 将两条路线的 `Pillow` 从 12.3.0 升级到 13.0.0：GitHub 安全公告库 10-21 至 10-23 新登记的 Pillow 公告共 41 条（另经 PyPI 漏洞库复核，登记 37 条，口径略有不同），都在 13.0.0 修复，其中 5 条为严重级（多为处理畸形图片时的堆缓冲区溢出）。本 skill 脚本不直接调用 Pillow，它是 PDF 生成库的底层依赖。
