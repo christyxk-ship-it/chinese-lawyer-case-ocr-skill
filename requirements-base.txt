@@ -1,4 +1,4 @@
-numpy==2.5.2
+numpy==2.5.4
 pypdf==6.21.4
 pypdfium2==5.14.0
 Pillow==13.0.0
